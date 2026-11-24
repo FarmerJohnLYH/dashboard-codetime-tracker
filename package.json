@@ -50,7 +50,7 @@
           "default": 2,
           "minimum": 0,
           "maximum": 1440,
-          "description": "Hide timeline events whose total recorded dwell time is shorter than this many minutes. Use 0 to show all events. Does not affect the table, totals, or raw export."
+          "description": "Hide projects whose aggregated dwell time in a half-hour slot is shorter than this many minutes. Use 0 to show all projects. Does not affect the table, totals, or raw export."
         }
       }
     }

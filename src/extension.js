@@ -79,7 +79,7 @@ async function render(){
  const rows=[...latest.values()];
  if(lastError)warnings.push('记录尚未保存，将自动重试：'+lastError);
  if(owner!==panel||version!==renderVersion)return;
- await owner.webview.postMessage({type:'data',date,warnings,groups:summarize(rows,meta),timeline:timeline(rows,vscode.workspace.getConfiguration('dashboard').get('timelineMinMinutes',2)),rows:rows.map(r=>({...r,name:meta[r.project]?.alias||r.projectName}))});
+ await owner.webview.postMessage({type:'data',date,warnings,groups:summarize(rows,meta),timeline:timeline(rows,vscode.workspace.getConfiguration('dashboard').get('timelineMinMinutes',2),meta),rows:rows.map(r=>({...r,name:meta[r.project]?.alias||r.projectName}))});
 }
 async function editMeta(projects){
  const meta=await store.metadata(),m=meta[projects[0]]||{};
@@ -92,16 +92,11 @@ function exportRaw(){
  if(exporting)return exporting;
  exporting=(async()=>{
   const date=followToday?day(Date.now()):viewDay;
-  const selection=await vscode.window.showQuickPick([
-   {label:'当前日期',description:date,scope:'day'},
-   {label:'全部历史',description:'导出所有可读取的日期及当前未保存记录',scope:'all'}
-  ],{title:'导出统计原始数据',placeHolder:'JSON 格式，保留逐条记录及完整路径'});
-  if(!selection)return;
-  const destination=await vscode.window.showSaveDialog({title:'保存统计原始数据',defaultUri:vscode.Uri.file(path.join(os.homedir(),'dashboard-raw-'+(selection.scope==='day'?date:'all')+'.json')),filters:{JSON:['json']},saveLabel:'导出'});
+  const destination=await vscode.window.showSaveDialog({title:'保存统计原始数据',defaultUri:vscode.Uri.file(path.join(os.homedir(),'dashboard-raw-all.json')),filters:{JSON:['json']},saveLabel:'导出'});
   if(!destination)return;
   tracker.tick(Date.now());dirty=true;
   await flush();
-  const payload=await buildExport(store,tracker.rows,{scope:selection.scope,date});
+  const payload=await buildExport(store,tracker.rows,{scope:'all',date});
   await vscode.workspace.fs.writeFile(destination,Buffer.from(JSON.stringify(payload,null,2)+'\n','utf8'));
   const message=`已导出 ${payload.records.length} 条原始记录。`;
   if(payload.warnings.length)await vscode.window.showWarningMessage(message+' 部分损坏记录无法读取，详见 JSON 中的 warnings；原文件已保留。');

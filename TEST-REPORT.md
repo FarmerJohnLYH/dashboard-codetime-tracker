@@ -132,3 +132,11 @@ Downloaded official stable VS Code Linux x64. Attempted running the extension-ho
 ## Known boundaries
 
 Windows and Remote SSH runtime are untested. Task assignment is per project and applies to history; per-session task assignment is not implemented. No Jira server validation. Foreground dwell is a reference for worklogs, not approved billable time. No terminal/webview/custom-editor time, cross-device sync, or file rename history migration. No application screenshot is available from this environment.
+
+## 项目卡片设计评审（2026-11-24）
+
+- 100 项自动化测试通过，源文件行覆盖率 100%；Chromium 实际布局验证通过。
+- 新增/更新：同名多文件先聚合后过滤、别名与表格一致、同一文件合并、跨半小时用时与活跃时长分摊不重复、夏令时边界、原始数据不变。
+- 全部历史单按钮导出：不再调用范围选择器；切换历史日期仍包含所有日期；取消保存、并发点击、损坏记录、EPERM 未落盘记录与目标 ENOSPC 均有回归。
+- 验证每排 1/2/3/4 等宽、固定 132px 高、超出横向滚动、滚动位置恢复、展开文件不改变卡片高度、412px 窄窗口与主题兼容。
+- 评审截图由实际 HTML 页面配合示例记录渲染，保存在本地 `review/project-design/`，不包含用户原始统计。

@@ -6,27 +6,27 @@ test('merged groups expose workload and legacy unknowns without Jira or worklog 
  const dom=new JSDOM(fs.readFileSync('media/index.html','utf8'),{runScripts:'dangerously'}),w=dom.window,d=w.document;
  const rows=['a','b'].map((project,i)=>({id:project,project,projectName:'same',uri:project,path:'/full/'+project,start:0,end:1000,dwell:1000,active:500,added:3,deleted:1}));
  const send=()=>w.dispatchEvent(new w.MessageEvent('message',{data:{type:'data',date:'2026-11-24',rows,timeline:timeline(rows,0),groups:summarize(rows,{a:{task:'ABC-1'}})}}));send();
- assert.equal(d.querySelectorAll('tbody > tr').length,1);assert(d.body.textContent.includes('合并 2 个路径'));
+ assert.equal(d.querySelectorAll('tbody > tr').length,1);assert(!d.body.textContent.includes('合并 2 个路径'));
  assert.equal(d.querySelector('[data-task]'),null);assert(!d.getElementById('content').textContent.includes('ABC-1'));assert(!d.getElementById('content').textContent.includes('Jira'));assert(!d.getElementById('content').textContent.includes('未分配'));
  assert(!d.body.textContent.includes('填报工时'));assert(!d.body.textContent.includes('累计增删'));
- assert(d.body.textContent.includes('— 次'));assert(d.body.textContent.includes('非物理按键总数'));
+ assert(d.body.textContent.includes('— 次'));assert(!d.getElementById('content').textContent.includes('非物理按键总数'));assert.equal(d.querySelectorAll('#content .hint').length,0);
  Object.assign(rows[0],{metricsVersion:2,keyboardEvents:4,saves:1,changeEvents:2});send();
  assert(d.body.textContent.includes('4 * 次'));
  d.querySelector('[data-expand]').click();assert(d.body.textContent.includes('/full/a'));assert(d.body.textContent.includes('/full/b'));
- d.getElementById('timelineTab').click();d.querySelector('[data-event]').click();assert(d.body.textContent.includes('键盘活动 4 次'));
+ d.getElementById('timelineTab').click();d.querySelector('[data-event]').click();assert.equal(d.querySelectorAll('.event-card').length,1);assert(d.body.textContent.includes('/full/a'));assert(d.body.textContent.includes('/full/b'));
  dom.window.close();
 });
 
-test('B timeline renders half-hour stamps, continuation cards, fixed card classes and threshold messages',()=>{
+test('B timeline renders half-hour stamps, project cards, fixed card classes and threshold messages',()=>{
  const messages=[],dom=new JSDOM(fs.readFileSync('media/index.html','utf8'),{runScripts:'dangerously',beforeParse(w){w.acquireVsCodeApi=()=>({postMessage:m=>messages.push(m),getState:()=>({view:'timeline'}),setState(){}});}}),w=dom.window,d=w.document;
- const base=new Date(2026,10,24,9).getTime(),rows=Array.from({length:6},(_,i)=>({id:String(i),project:'p',name:'Project <script>',projectName:'p',path:'/a/'+i+'.c',start:base+i*60000,end:base+(i+3)*60000,dwell:180000,active:60000,added:1,deleted:0}));
- rows.push({...rows[0],id:'cross',start:base+29*60000,end:base+31*60000,dwell:120000});
+ const base=new Date(2026,10,24,9).getTime(),rows=Array.from({length:6},(_,i)=>({id:String(i),project:'p'+i,projectName:'Project <script>'+i,uri:'file:///'+i,path:'/a/'+i+'.c',start:base+i*60000,end:base+(i+3)*60000,dwell:180000,active:60000,added:1,deleted:0}));
+ rows.push({...rows[0],id:'cross',start:base+29*60000,end:base+33*60000,dwell:240000});
  w.dispatchEvent(new w.MessageEvent('message',{data:{type:'data',date:'2026-11-24',rows,groups:summarize(rows),timeline:timeline(rows)}}));
  assert.deepEqual([...d.querySelectorAll('.bucket-time')].map(el=>el.textContent),['09:00','09:30']);
- assert.equal(d.querySelectorAll('.bucket')[0].querySelectorAll('.event-card').length,7);assert(d.querySelector('.event-strip').classList.contains('cards-4'));
- assert(d.getElementById('content').textContent.includes('接续上一时段'));assert.equal(d.querySelectorAll('#content script').length,0);
- d.querySelector('[data-event]').click();assert(d.querySelector('.event-detail'));assert.equal(d.querySelectorAll('.event-card').length,8);
+ assert.equal(d.querySelectorAll('.bucket')[0].querySelectorAll('.event-card').length,6);assert(d.querySelector('.event-strip').classList.contains('cards-4'));
+ assert(!d.getElementById('content').textContent.includes('接续上一时段'));assert.equal(d.querySelector('.event-card').textContent.includes('/a/'),false);assert.equal(d.querySelectorAll('#content script').length,0);
+ d.querySelector('[data-event]').click();assert(d.querySelector('.event-detail'));assert.equal(d.querySelectorAll('.event-card').length,7);
  d.getElementById('minMinutes').value='0.5';d.getElementById('applyMin').click();assert.deepEqual(JSON.parse(JSON.stringify(messages.at(-1))),{type:'timelineThreshold',value:.5});
  const before=messages.length;d.getElementById('minMinutes').value='-1';d.getElementById('applyMin').click();assert.equal(messages.length,before);
- w.dispatchEvent(new w.MessageEvent('message',{data:{type:'data',date:'2026-11-24',rows,groups:summarize(rows),timeline:timeline(rows,10)}}));assert(d.body.textContent.includes('当前阈值下暂无事件'));assert(d.getElementById('minMinutes'));dom.window.close();
+ w.dispatchEvent(new w.MessageEvent('message',{data:{type:'data',date:'2026-11-24',rows,groups:summarize(rows),timeline:timeline(rows,10)}}));assert(d.body.textContent.includes('暂无符合条件的项目'));assert(d.getElementById('minMinutes'));dom.window.close();
 });

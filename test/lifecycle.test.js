@@ -115,21 +115,21 @@ test('lifecycle regressions',async t=>{
   assert.equal((await new Storage(h.root).read(require('../src/core').day(Date.now()))).rows.reduce((n,r)=>n+r.added,0),1);
  });
 
- await t.test('export button writes selected raw JSON including live data without counting it twice',async t=>{
+ await t.test('export button directly writes all-history raw JSON including live data without counting it twice',async t=>{
   const h=await harness(t);h.edit();await h.open();await h.ready();
   h.choice({scope:'day'});const output=path.join(h.root,'export.json');h.destination({fsPath:output});
   await h.callbacks.message({type:'export'});
-  const data=JSON.parse(await fs.readFile(output,'utf8'));assert.equal(data.schemaVersion,1);assert.equal(data.scope.kind,'day');
+  const data=JSON.parse(await fs.readFile(output,'utf8'));assert.equal(data.schemaVersion,1);assert.equal(data.scope.kind,'all');
   assert.equal(data.records.reduce((n,r)=>n+r.added,0),1);assert.equal(data.records[0].uri,'file:///a/main.c');assert.equal(h.infos.length,1);
  });
- await t.test('export current date follows the selected historical day; all-history includes other dates',async t=>{
+ await t.test('export always includes all history regardless of selected day and never opens a scope picker',async t=>{
   const today=require('../src/core').day(Date.now());const h=await harness(t,{nontext:true,seed:[statusRow('old','2020-01-01',1000),statusRow('today',today,2000)]});
   await h.open();await h.callbacks.message({type:'date',value:'2020-01-01'});
   const output=path.join(h.root,'export.json');h.destination({fsPath:output});h.choice({scope:'day'});
-  await h.callbacks['dashboard.export']();let data=JSON.parse(await fs.readFile(output,'utf8'));assert.deepEqual(data.scope.dates,['2020-01-01']);assert.equal(data.records.length,1);
+  h.v.window.showQuickPick=()=>{throw Error('Unexpected scope picker');};await h.callbacks['dashboard.export']();let data=JSON.parse(await fs.readFile(output,'utf8'));assert.deepEqual(data.scope.dates,['2020-01-01',today]);assert.equal(data.records.length,2);
   h.choice({scope:'all'});await h.callbacks['dashboard.export']();data=JSON.parse(await fs.readFile(output,'utf8'));assert.equal(data.records.length,2);
  });
- await t.test('canceling scope or save dialog never writes an export or reports success',async t=>{
+ await t.test('canceling save dialog never writes an export or reports success',async t=>{
   const h=await harness(t);let writes=0;h.v.workspace.fs.writeFile=async()=>writes++;
   h.choice(undefined);await h.callbacks['dashboard.export']();h.choice({scope:'all'});h.destination(undefined);await h.callbacks['dashboard.export']();
   assert.equal(writes,0);assert.equal(h.infos.length,0);assert.equal(h.errors.length,0);
@@ -149,7 +149,7 @@ test('lifecycle regressions',async t=>{
  });
  await t.test('concurrent export requests share one dialog and one write',async t=>{
   const h=await harness(t);let release,dialogs=0,writes=0;
-  h.v.window.showQuickPick=async()=>{dialogs++;await new Promise(r=>release=r);return {scope:'day'};};h.destination({fsPath:path.join(h.root,'export.json')});h.v.workspace.fs.writeFile=async()=>writes++;
+  h.v.window.showSaveDialog=async()=>{dialogs++;await new Promise(r=>release=r);return {fsPath:path.join(h.root,'export.json')};};h.destination({fsPath:path.join(h.root,'export.json')});h.v.workspace.fs.writeFile=async()=>writes++;
   const first=h.callbacks['dashboard.export'](),second=h.callbacks['dashboard.export']();release();await Promise.all([first,second]);assert.equal(dialogs,1);assert.equal(writes,1);
  });
 
