@@ -41,15 +41,17 @@ const {timeline} = require('../src/timeline');
   assert.equal(await page.getByText('填报工时', {exact: true}).count(), 0);
   assert.equal(await page.getByText('Jira任务', {exact: true}).count(), 0);
   assert(await page.getByRole('button',{name:'导出',exact:true}).isVisible());
-  assert.equal(await page.getByText('键盘活动', {exact: true}).count(), 1);
+  assert.equal(await page.locator('th').filter({hasText:'键盘活动'}).count(), 1);assert(await page.locator('.project-detail').isVisible());
   if(process.env.DASHBOARD_SCREENSHOTS){
    await fs.mkdir(process.env.DASHBOARD_SCREENSHOTS,{recursive:true});
    await page.evaluate(()=>{document.body.className='vscode-dark';});
    await page.screenshot({path:process.env.DASHBOARD_SCREENSHOTS+'/table-dark.png',fullPage:true});
   }
+  assert(await page.locator('.file-metrics').first().isVisible());
+  await page.getByRole('button',{name:'收起文件',exact:true}).first().click();assert.equal(await page.locator('.project-detail').count(),0);
+  await page.getByRole('button',{name:'展开文件',exact:true}).first().click();
   await page.getByRole('button', {name: '时间线', exact: true}).click();
-  await page.getByRole('button', {name: /^展开项目/}).first().click();
-  assert(await page.locator('.event-detail .path').getByText(r.path, {exact:true}).isVisible());
+  assert.equal(await page.locator('.project-detail, [data-event]').count(),0);
   await page.setViewportSize({width: 412, height: 800});
   for (const tab of ['时间线', '表格']) {
    await page.getByRole('button', {name: tab, exact: true}).click();
@@ -86,13 +88,11 @@ const {timeline} = require('../src/timeline');
   const offset=await strip.evaluate(el=>el.scrollLeft);
   await page.evaluate(d=>window.postMessage(d,'*'),denseData);
   await page.waitForFunction(expected=>Math.abs(document.querySelector('.event-strip').scrollLeft-expected)<2,offset);
-  await strip.locator('button.event-card').last().click();assert(await page.locator('.event-detail').isVisible());
+  await strip.locator('article.event-card').last().click();assert.equal(await page.locator('.project-detail, .event-detail').count(),0);
   assert.equal(await strip.locator('.event-card').last().evaluate(el=>el.getBoundingClientRect().height),132);
-  await page.getByRole('button',{name:'收起项目详情'}).click();assert.equal(await page.locator('.event-detail').count(),0);
-  assert(await page.locator('button.event-card:focus').count());
   assert.equal(await page.locator('#minMinutes').count(),0);
   const idle=page.locator('.idle-card').first();assert(await idle.count());
-  const projectColor=await page.locator('button.event-card').first().evaluate(el=>getComputedStyle(el).backgroundColor);
+  const projectColor=await page.locator('article.event-card').first().evaluate(el=>getComputedStyle(el).backgroundColor);
   const idleColor=await idle.evaluate(el=>getComputedStyle(el).backgroundColor);assert.notEqual(projectColor,idleColor);
   for(const count of [1,2,3,4]){
    const rows=dense.slice(0,count).map(r=>({...r,dwell:30*60000/count}));
@@ -102,7 +102,6 @@ const {timeline} = require('../src/timeline');
    assert(size.scroll<=size.width+1);assert(size.widths.every(w=>Math.abs(w-size.widths[0])<1));
   }
   await page.evaluate(d=>window.postMessage(d,'*'),denseData);
-  const expanded=page.locator('.event-card[aria-expanded="true"]');if(await expanded.count())await expanded.first().click();
   await strip.evaluate(el=>{el.scrollLeft=0;});
   await page.setViewportSize({width:412,height:850});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
@@ -111,7 +110,7 @@ const {timeline} = require('../src/timeline');
   await page.evaluate(() => window.postMessage({type: 'data', date: '2026-11-25', groups: [], rows: []}, '*'));
   await page.getByText('当天暂无记录', {exact: false}).waitFor();
   assert.deepEqual(errors, []);
-  console.log('UI PASS: half-hour B timeline, 1/2/3/4 equal columns, overflow scrolling, fixed 132px cards, idle cards, all short projects, scroll restoration, details, table/export, 412px layout, four themes, no CSP errors');
+  console.log('UI PASS: half-hour B timeline, 1/2/3/4 equal columns, overflow scrolling, fixed 132px cards, idle cards, all short projects, scroll restoration, table-only details, table/export, 412px layout, four themes, no CSP errors');
  } finally {
   await browser.close();
  }

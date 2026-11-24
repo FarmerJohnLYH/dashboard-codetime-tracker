@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs');const {JSDOM}=require('jsdom');const {summarize}=require('../src/core');const {timeline}=require('../src/timeline');
-test('real page script supports table/timeline, rename messages, dates and escaping',async()=>{const messages=[];const dom=new JSDOM(fs.readFileSync('media/index.html','utf8'),{runScripts:'dangerously',beforeParse(w){w.acquireVsCodeApi=()=>({postMessage:m=>messages.push(m),getState:()=>null,setState(){}})}});const w=dom.window,d=w.document;const r={id:'1',project:'file:///a',projectName:'<img src=x onerror=alert(1)>',name:'Audio',path:'F:\\audio\\a.c',uri:'file:///a/a.c',start:Date.now(),end:Date.now()+10000,dwell:10000,active:10000,added:5,deleted:5};w.dispatchEvent(new w.MessageEvent('message',{data:{type:'data',date:'2026-11-24',rows:[r],timeline:timeline([r]),groups:summarize([r],{})}}));assert(d.querySelector('table'));assert.equal(d.querySelector('img'),null);d.querySelector('[data-expand]').click();assert(d.body.textContent.includes(r.path));d.querySelector('[data-alias]').click();assert.equal(messages.at(-1).field,'alias');assert.equal(d.querySelector('[data-task]'),null);d.getElementById('export').click();assert.equal(messages.at(-1).type,'export');d.getElementById('timelineTab').click();assert(d.querySelector('.timeline'));assert.equal(d.querySelector('table'),null);d.querySelector('[data-event]').click();assert(d.body.textContent.includes(r.path));d.getElementById('prev').click();assert.equal(messages.at(-1).value,'2026-11-23');w.dispatchEvent(new w.MessageEvent('message',{data:{type:'data',date:'2026-11-25',rows:[],groups:[]}}));assert(d.body.textContent.includes('当天暂无记录'));for(const label of ['暂停','补录','复制填报清单'])assert(!d.body.textContent.includes(label));dom.window.close();});
+test('real page script supports table/timeline, rename messages, dates and escaping',async()=>{const messages=[];const dom=new JSDOM(fs.readFileSync('media/index.html','utf8'),{runScripts:'dangerously',beforeParse(w){w.acquireVsCodeApi=()=>({postMessage:m=>messages.push(m),getState:()=>null,setState(){}})}});const w=dom.window,d=w.document;const r={id:'1',project:'file:///a',projectName:'<img src=x onerror=alert(1)>',name:'Audio',path:'F:\\audio\\a.c',uri:'file:///a/a.c',start:Date.now(),end:Date.now()+10000,dwell:10000,active:10000,added:5,deleted:5};w.dispatchEvent(new w.MessageEvent('message',{data:{type:'data',date:'2026-11-24',rows:[r],timeline:timeline([r]),groups:summarize([r],{})}}));assert(d.querySelector('table'));assert.equal(d.querySelector('img'),null);d.querySelector('[data-expand]').click();assert(d.body.textContent.includes(r.path));d.querySelector('[data-alias]').click();assert.equal(messages.at(-1).field,'alias');assert.equal(d.querySelector('[data-task]'),null);d.getElementById('export').click();assert.equal(messages.at(-1).type,'export');d.getElementById('timelineTab').click();assert(d.querySelector('.timeline'));assert.equal(d.querySelector('table'),null);assert.equal(d.querySelector('[data-event]'),null);assert.equal(d.querySelector('.project-detail'),null);assert(!d.getElementById('content').textContent.includes(r.path));d.getElementById('prev').click();assert.equal(messages.at(-1).value,'2026-11-23');w.dispatchEvent(new w.MessageEvent('message',{data:{type:'data',date:'2026-11-25',rows:[],groups:[]}}));assert(d.body.textContent.includes('当天暂无记录'));for(const label of ['暂停','补录','复制填报清单'])assert(!d.body.textContent.includes(label));dom.window.close();});
 test('corrupt restored state falls back and warnings render as text',()=>{const dom=new JSDOM(fs.readFileSync('media/index.html','utf8'),{runScripts:'dangerously',beforeParse(w){w.acquireVsCodeApi=()=>({postMessage(){},getState:()=>({view:'bad',expanded:'bad'}),setState(){}})}});const w=dom.window;w.dispatchEvent(new w.MessageEvent('message',{data:{type:'data',date:'2026-11-24',rows:[],groups:[],warnings:['<script>bad</script>']}}));assert(w.document.getElementById('tableTab').classList.contains('selected'));assert.equal(w.document.getElementById('warnings').textContent,'<script>bad</script>');assert.equal(w.document.getElementById('warnings').children.length,0);dom.window.close();});
 
 test('merged groups expose workload and legacy unknowns without Jira or worklog columns',()=>{
@@ -13,11 +13,12 @@ test('merged groups expose workload and legacy unknowns without Jira or worklog 
  Object.assign(rows[0],{metricsVersion:2,keyboardEvents:4,saves:1,changeEvents:2});send();
  assert(d.body.textContent.includes('4 * 次'));
  d.querySelector('[data-expand]').click();assert(d.body.textContent.includes('/full/a'));assert(d.body.textContent.includes('/full/b'));
- d.getElementById('timelineTab').click();d.querySelector('[data-event]').click();assert.equal(d.querySelectorAll('button.event-card').length,1);assert(d.body.textContent.includes('/full/a'));assert(d.body.textContent.includes('/full/b'));
+ d.getElementById('timelineTab').click();assert.equal(d.querySelectorAll('article.event-card').length,1);assert.equal(d.querySelector('.project-detail'),null);assert.equal(d.querySelector('[data-event]'),null);
+
  dom.window.close();
 });
 
-test('B timeline renders half-hour stamps, project cards, idle cards and scoped project details without filter controls',()=>{
+test('B timeline renders half-hour stamps, project cards, idle cards and table-only project details without filter controls',()=>{
  const messages=[],dom=new JSDOM(fs.readFileSync('media/index.html','utf8'),{runScripts:'dangerously',beforeParse(w){w.acquireVsCodeApi=()=>({postMessage:m=>messages.push(m),getState:()=>({view:'timeline'}),setState(){}});}}),w=dom.window,d=w.document;
  const base=new Date(2026,10,24,9).getTime(),rows=Array.from({length:6},(_,i)=>({id:String(i),project:'p'+i,projectName:'Project <script>'+i,uri:'file:///'+i,path:'/a/'+i+'.c',start:base+i*60000,end:base+(i+3)*60000,dwell:180000,active:60000,added:1,deleted:0}));
  rows.push({...rows[0],id:'cross',start:base+29*60000,end:base+33*60000,dwell:240000});
@@ -25,21 +26,27 @@ test('B timeline renders half-hour stamps, project cards, idle cards and scoped 
  assert.deepEqual([...d.querySelectorAll('.bucket-time')].map(el=>el.textContent),['09:00','09:30']);
  assert.equal(d.querySelectorAll('.bucket')[0].querySelectorAll('.event-card').length,7);assert(d.querySelector('.event-strip').classList.contains('cards-4'));
  assert(!d.getElementById('content').textContent.includes('接续上一时段'));assert.equal(d.querySelector('.event-card').textContent.includes('/a/'),false);assert.equal(d.querySelectorAll('#content script').length,0);
- d.querySelector('[data-event]').click();assert(d.querySelector('.event-detail'));assert.equal(d.querySelectorAll('.event-card').length,9);
+ d.querySelector('article.event-card').click();assert.equal(d.querySelector('.project-detail'),null);assert.equal(d.querySelectorAll('.event-card').length,9);
  assert.equal(d.querySelector('#minMinutes'),null);assert.equal(d.querySelector('#applyMin'),null);
  assert.equal(d.querySelectorAll('.idle-card').length,2);assert(d.querySelector('.idle-card').textContent.includes('11分钟'));
- assert(d.querySelector('.event-detail').textContent.includes('09:00 – 09:30'));
- assert.equal(d.querySelectorAll('.detail-file').length,1);assert.equal(d.querySelectorAll('#content script').length,0);
- const key=d.querySelector('[aria-expanded="true"]').dataset.event;d.querySelector('[data-close-detail]').click();assert.equal(d.querySelector('.event-detail'),null);assert.equal(d.activeElement.dataset.event,key);
+ assert.equal(d.querySelector('[data-event]'),null);assert.equal(d.querySelector('[data-close-detail]'),null);
+ d.getElementById('tableTab').click();d.querySelector('[data-expand]').click();
+ assert(d.querySelector('.project-detail').textContent.includes('2026-11-24'));assert.equal(d.querySelectorAll('.detail-file').length,1);
+ assert.equal(d.querySelectorAll('#content script').length,0);
+ assert(d.querySelector('.file-duration').textContent.includes('7'));
+ d.querySelector('[data-expand]').click();assert.equal(d.querySelector('.project-detail'),null);assert.equal(d.activeElement.dataset.expand,'0');
+
  dom.window.close();
 });
-test('idle cards disappear at zero/overbooked slots and projects named idle remain expandable',()=>{
+test('idle cards disappear at zero/overbooked slots and projects named idle only expand in the table',()=>{
  const dom=new JSDOM(fs.readFileSync('media/index.html','utf8'),{runScripts:'dangerously',beforeParse(w){w.acquireVsCodeApi=()=>({postMessage(){},getState:()=>({view:'timeline'}),setState(){}});}}),w=dom.window,d=w.document;
  for(const dwell of [1800000,2000000]){
   const rows=[{id:'idle-name',project:'p',projectName:'空闲',path:'C:\\work\\main.c',uri:'file:///main.c',start:0,end:1800000,dwell,active:600000}];
   w.dispatchEvent(new w.MessageEvent('message',{data:{type:'data',date:'2026-11-24',rows,groups:summarize(rows),timeline:timeline(rows)}}));
-  assert.equal(d.querySelectorAll('.idle-card').length,0);assert.equal(d.querySelectorAll('[data-event]').length,1);d.querySelector('[data-event]').click();
-  assert.equal(d.querySelector('.file-location>strong').textContent,'main.c');d.querySelector('[data-close-detail]').click();
+  assert.equal(d.querySelectorAll('.idle-card').length,0);assert.equal(d.querySelectorAll('article.event-card').length,1);assert.equal(d.querySelector('[data-event]'),null);
+  d.getElementById('tableTab').click();d.querySelector('[data-expand]').click();
+  assert.equal(d.querySelector('.file-location>strong').textContent,'main.c');d.querySelector('[data-expand]').click();d.getElementById('timelineTab').click();
+
  }
  dom.window.close();
 });
