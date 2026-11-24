@@ -13,3 +13,5 @@ review/
 
 # Local-only review evidence; do not publish screenshots or raw test data.
 docs/native-review/
+
+.codex-attachments/

@@ -34,34 +34,34 @@ test('lifecycle regressions',async t=>{
  await t.test('right status starts at zero and remains a dashboard shortcut',async t=>{
   const h=await harness(t,{nontext:true});
   assert.equal(h.status.alignment,h.v.StatusBarAlignment.Right);
-  assert.equal(h.status.text,'</> 0 h 0 m');assert.equal(h.status.command,'dashboard.open');
+  assert.equal(h.status.text,'$(code) 00:00');assert.equal(h.status.command,'dashboard.open');
   await h.open();assert(h.pane);
  });
  await t.test('startup sums all today projects using dwell and ignores the viewed historical day',async t=>{
   const date=require('../src/core').day(Date.now());
   const h=await harness(t,{nontext:true,seed:[statusRow('a',date,60*60000),statusRow('b',date,65*60000+59999),statusRow('old','2020-01-01',12*3600000)]});
-  assert.equal(h.status.text,'</> 2 h 5 m');
+  assert.equal(h.status.text,'$(code) 02:05');
   await h.open();await h.callbacks.message({type:'date',value:'2020-01-01'});
-  assert.equal(h.status.text,'</> 2 h 5 m');
+  assert.equal(h.status.text,'$(code) 02:05');
  });
  await t.test('timer includes live time once, updates other windows and restores after restart',async t=>{
   const real=Date.now;let now=new Date(2026,10,24,9).getTime();Date.now=()=>now;
   try{
    const h=await harness(t,{seed:[statusRow('history','2026-11-24',59*60000)]});
    for(let i=0;i<6;i++){now+=10000;await h.tick();}
-   assert.equal(h.status.text,'</> 1 h 0 m');
-   await h.open();await h.ready();await h.tick();assert.equal(h.status.text,'</> 1 h 0 m');
+   assert.equal(h.status.text,'$(code) 01:00');
+   await h.open();await h.ready();await h.tick();assert.equal(h.status.text,'$(code) 01:00');
    await new Storage(h.root,'other-window').save([statusRow('other','2026-11-24',30*60000)]);
-   await h.tick();assert.equal(h.status.text,'</> 1 h 30 m');
-   await h.ext.deactivate();await h.ext.activate(h.context);assert.equal(h.status.text,'</> 1 h 30 m');
+   await h.tick();assert.equal(h.status.text,'$(code) 01:30');
+   await h.ext.deactivate();await h.ext.activate(h.context);assert.equal(h.status.text,'$(code) 01:30');
   }finally{Date.now=real;}
  });
  await t.test('status resets at local midnight rather than showing yesterday total',async t=>{
   const real=Date.now;let now=new Date(2026,10,24,23,59,55).getTime();Date.now=()=>now;
   try{
-   const h=await harness(t,{seed:[statusRow('history','2026-11-24',2*3600000)]});assert.equal(h.status.text,'</> 2 h 0 m');
-   now+=10000;await h.tick();assert.equal(h.status.text,'</> 0 h 0 m');
-   for(let i=0;i<6;i++){now+=10000;await h.tick();}assert.equal(h.status.text,'</> 0 h 1 m');
+   const h=await harness(t,{seed:[statusRow('history','2026-11-24',2*3600000)]});assert.equal(h.status.text,'$(code) 02:00');
+   now+=10000;await h.tick();assert.equal(h.status.text,'$(code) 00:00');
+   for(let i=0;i<6;i++){now+=10000;await h.tick();}assert.equal(h.status.text,'$(code) 00:01');
   }finally{Date.now=real;}
  });
  await t.test('out-of-order status reads and deactivation never overwrite current display',async t=>{
@@ -69,17 +69,17 @@ test('lifecycle regressions',async t=>{
   const enter=new Promise(r=>entered=r);let calls=0;
   Storage.prototype.read=async function(date){if(++calls===1){entered();await new Promise(r=>release=r);return {rows:[statusRow('stale',date,9*3600000)],warnings:[]};}return orig.call(this,date);};
   try{
-   const old=h.tick();await enter;await h.tick();assert.equal(h.status.text,'</> 0 h 0 m');
-   release();await old;assert.equal(h.status.text,'</> 0 h 0 m');
+   const old=h.tick();await enter;await h.tick();assert.equal(h.status.text,'$(code) 00:00');
+   release();await old;assert.equal(h.status.text,'$(code) 00:00');
    calls=0;const pending=h.tick();await new Promise(r=>setImmediate(r));const item=h.status;
-   await h.ext.deactivate();release();await pending;assert.equal(item.text,'</> 0 h 0 m');
+   await h.ext.deactivate();release();await pending;assert.equal(item.text,'$(code) 00:00');
   }finally{Storage.prototype.read=orig;}
  });
  await t.test('failed status reads retain time and report the error without changing the requested format',async t=>{
   const date=require('../src/core').day(Date.now()),h=await harness(t,{nontext:true,seed:[statusRow('history',date,3600000)]}),orig=Storage.prototype.read;
   Storage.prototype.read=async()=>{throw Error('read denied')};
-  try{await h.tick();assert.equal(h.status.text,'</> 1 h 0 m');assert(h.status.tooltip.includes('read denied'));assert(h.errors.some(e=>e.includes('read denied')));}finally{Storage.prototype.read=orig;}
-  await h.tick();assert.equal(h.status.text,'</> 1 h 0 m');
+  try{await h.tick();assert.equal(h.status.text,'$(code) 01:00');assert(h.status.tooltip.includes('read denied'));assert(h.errors.some(e=>e.includes('read denied')));}finally{Storage.prototype.read=orig;}
+  await h.tick();assert.equal(h.status.text,'$(code) 01:00');
  });
 
 });

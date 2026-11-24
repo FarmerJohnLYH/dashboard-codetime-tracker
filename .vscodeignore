@@ -6,3 +6,5 @@ package-lock.json
 *.zip
 coverage.txt
 docs/native-review/**
+
+.codex-attachments/**

@@ -11,8 +11,8 @@ let statusVersion=0,statusDay,statusTotal=0,statusWarnings=[];
 function drawStatus(){
  if(!status)return;
  const minutes=Math.floor(statusTotal/60000);
- status.text=`</> ${Math.floor(minutes/60)} h ${minutes%60} m`;
- status.tooltip=['今天实际停留时间（所有项目）','点击打开代码时间统计',...statusWarnings,lastError].filter(Boolean).join('\n');
+ status.text=`$(code) ${String(Math.floor(minutes/60)).padStart(2,'0')}:${String(minutes%60).padStart(2,'0')}`;
+ status.tooltip=['今天实际停留时间（所有项目，小时:分钟）','点击打开代码时间统计',...statusWarnings,lastError].filter(Boolean).join('\n');
 }
 async function refreshStatus(){
  const owner=status,source=store,current=tracker,date=day(Date.now()),version=++statusVersion;

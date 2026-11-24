@@ -8,7 +8,7 @@
 或运行 `code --install-extension YuanhaoLiu.dashboard-simple-code-time-tracker`。
 也可以在扩展菜单选择 Install from VSIX，安装本地 VSIX 文件。
 早期本地 VSIX 使用发布者 `farmerjohnlyh`，与正式版属于不同扩展；若已安装旧版，请先备份旧版 globalStorage 目录，再卸载旧版。需要保留历史时，在 VS Code 关闭后将旧版数据复制到正式版对应目录。
-命令面板运行 `Dashboard: Open`，或点击右下角状态栏的 `</> x h x m`。
+命令面板运行 `Dashboard: Open`，或点击右下角状态栏的原生代码图标与 `HH:MM` 时间（小时:分钟，例如 `01:17`；未满一小时显示 `00:03`）。
 状态栏显示本地今天所有项目的累计实际停留时间（与报表“实际用时”一致），按整分钟显示，每 10 秒更新；自动恢复历史记录，跨日重新累计，不随报表所选日期改变。
 正常使用文件编辑器即可自动记录；表格与时间线分别提供每日汇总及活动明细。
 
