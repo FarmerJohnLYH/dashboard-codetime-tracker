@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1
+
+- 新增“今日累计”扩展图标：代码符号 `</>` 搭配琥珀色累计圆环。
+
 ## 1.0.0
 
 - 首个 VS Code Marketplace 正式版本，发布者为 `YuanhaoLiu`。
