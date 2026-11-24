@@ -34,7 +34,7 @@
 
 ## 开发
 
-Node.js 22+；`npm ci`、`npm test`、`npx vsce package --no-dependencies --allow-missing-repository`。
+Node.js 22.22.2+（22.x）、24.15.0+（24.x）或 26+；`npm ci`、`npm test`、`npx vsce package --no-dependencies --allow-missing-repository`。
 `test/integration.cjs` 是真实 VS Code 扩展宿主测试入口；测试需可启动的桌面环境。
 使用 UI 模板中的 VS Code 主题变量自动适配亮色、暗色和高对比主题。
 
@@ -44,3 +44,27 @@ Node.js 22+；`npm ci`、`npm test`、`npx vsce package --no-dependencies --allo
 项目别名与任务配置分别原子保存到 project-fields 目录，旧版 projects.json 自动兼容读取，不删除旧数据。损坏记录会提示，原文件保留。相同项目的相同字段被同时修改时采用最后一次成功写入。
 
 运行 `npm run test:coverage` 可复现测试和后端覆盖率。Webview 脚本使用 JSDOM 进行行为测试；不包含真实浏览器布局、颜色、字体或 CSP 执行验证。
+
+## 0.1.2 本机验收
+
+修复暗色主题日期图标，并补齐可复现的浏览器测试与独立宿主测试。
+已在本机 macOS VS Code 1.137.0 完成界面与未保存编辑持久化验证。截图和原始测试输出仅保留本地。
+本轮用户保持锁屏，真实前台计时和失焦停表仍待解锁验证。
+
+浏览器回归：`npx playwright install chromium` 后执行 `npm run test:browser`。
+也可通过 `CHROMIUM_PATH` 指定已有的 Chrome / Chromium 可执行文件。
+
+真实宿主回归（在已解锁桌面中运行，并保持测试窗口前台）：
+
+```sh
+test_profile=$(mktemp -d /tmp/dashboard-test.XXXXXX)
+DASHBOARD_TEST_UNLOCKED=1 DASHBOARD_TEST_USER_DATA_DIR="$test_profile" code \
+  --user-data-dir "$test_profile" \
+  --extensions-dir "$test_profile/extensions" \
+  --extensionDevelopmentPath="$PWD" \
+  --extensionTestsPath="$PWD/test/integration.cjs" \
+  --disable-workspace-trust --skip-welcome
+cat "$test_profile/integration-result.json"
+```
+
+`DASHBOARD_TEST_UNLOCKED=1` 仅应在确认桌面已解锁时设置；未设置时跳过前台计时验收。结果中的 `complete: true` 表示前台计时与报表停表均已验证；锁屏或失焦时会列出 `skipped`，不能当作完整通过。

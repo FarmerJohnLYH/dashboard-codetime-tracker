@@ -2,10 +2,11 @@
   "name": "dashboard-simple-code-time-tracker",
   "displayName": "Dashboard - a simple code time tracker",
   "description": "Local file-level code time and cumulative edit tracking with a minimal dashboard and timeline.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "farmerjohnlyh",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.85.0",
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
   "categories": [
     "Other"
@@ -19,7 +20,8 @@
   ],
   "scripts": {
     "test": "node --test test/*.test.js",
-    "test:coverage": "node --experimental-test-coverage --test test/*.test.js"
+    "test:coverage": "node --experimental-test-coverage --test test/*.test.js",
+    "test:browser": "node test/ui.cjs"
   },
   "contributes": {
     "commands": [
@@ -44,7 +46,8 @@
   "license": "MIT",
   "devDependencies": {
     "@vscode/vsce": "^4.1.1",
-    "jsdom": "^31.0.1"
+    "jsdom": "^31.0.1",
+    "playwright": "^1.65.1"
   },
   "repository": {
     "type": "git",

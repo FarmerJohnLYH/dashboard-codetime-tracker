@@ -5,3 +5,4 @@ package-lock.json
 *.vsix
 *.zip
 coverage.txt
+docs/native-review/**
