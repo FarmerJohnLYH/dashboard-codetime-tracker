@@ -1,21 +1,26 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),Module=require('node:module'),fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os');
 const {Storage}=require('../src/storage');
-async function harness(t,{nontext=false}={}){
+async function harness(t,{nontext=false,seed=[]}={}){
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'dashboard-life-')),callbacks={},messages=[],errors=[],disposables=[];
- const event=k=>fn=>{callbacks[k]=fn;return {dispose(){}}};let pane,interval,input,choice='Task';
+ if(seed.length)await new Storage(root,'prior').save(seed);
+ const event=k=>fn=>{callbacks[k]=fn;return {dispose(){}}};let pane,interval,input,choice='Task',status;
  const doc={uri:{scheme:'file',fsPath:'/a/main.c',toString:()=> 'file:///a/main.c'}};
- const v={Uri:{joinPath:()=>({})},StatusBarAlignment:{Left:1},ViewColumn:{Active:1},window:{activeTextEditor:{document:doc},state:{focused:true},createStatusBarItem:()=>({show(){},dispose(){}}),onDidChangeActiveTextEditor:event('editor'),onDidChangeWindowState:event('focus'),onDidChangeTextEditorSelection:event('selection'),onDidChangeTextEditorVisibleRanges:event('scroll'),showErrorMessage:m=>errors.push(m),showInputBox:async()=>input,showQuickPick:async()=>choice,createWebviewPanel:()=>pane={active:true,visible:true,webview:{postMessage:d=>messages.push(d),onDidReceiveMessage:event('message')},onDidDispose:event('dispose'),onDidChangeViewState:event('view'),reveal(){}}},workspace:{getWorkspaceFolder:()=>({name:'a',uri:{toString:()=> 'file:///a'}}),getConfiguration:()=>({get:()=>5}),onDidChangeConfiguration:event('config'),onDidChangeTextDocument:event('edit')},commands:{registerCommand:(k,fn)=>{callbacks[k]=fn;return {dispose(){}}}}};
+ const v={Uri:{joinPath:()=>({})},StatusBarAlignment:{Left:1,Right:2},ViewColumn:{Active:1},window:{activeTextEditor:{document:doc},state:{focused:true},createStatusBarItem:(alignment,priority)=>status={alignment,priority,show(){},dispose(){}},onDidChangeActiveTextEditor:event('editor'),onDidChangeWindowState:event('focus'),onDidChangeTextEditorSelection:event('selection'),onDidChangeTextEditorVisibleRanges:event('scroll'),showErrorMessage:m=>errors.push(m),showInputBox:async()=>input,showQuickPick:async()=>choice,createWebviewPanel:()=>pane={active:true,visible:true,webview:{postMessage:d=>messages.push(d),onDidReceiveMessage:event('message')},onDidDispose:event('dispose'),onDidChangeViewState:event('view'),reveal(){}}},workspace:{getWorkspaceFolder:()=>({name:'a',uri:{toString:()=> 'file:///a'}}),getConfiguration:()=>({get:()=>5}),onDidChangeConfiguration:event('config'),onDidChangeTextDocument:event('edit')},commands:{registerCommand:(k,fn)=>{callbacks[k]=fn;return {dispose(){}}}}};
  if(nontext){v.TabInputText=class{};v.window.tabGroups={activeTabGroup:{activeTab:{input:{}}}};}
  const load=Module._load,si=global.setInterval,ci=global.clearInterval;delete require.cache[require.resolve('../src/extension')];Module._load=function(id,...rest){return id==='vscode'?v:load.call(this,id,...rest)};const ext=require('../src/extension');Module._load=load;
  global.setInterval=fn=>{interval=fn;return 1};global.clearInterval=()=>{};
- const context={globalStorageUri:{fsPath:root},extensionPath:path.resolve(__dirname,'..'),subscriptions:disposables};ext.activate(context);
+ const context={globalStorageUri:{fsPath:root},extensionPath:path.resolve(__dirname,'..'),subscriptions:disposables};await ext.activate(context);
  t.after(async()=>{await ext.deactivate();global.setInterval=si;global.clearInterval=ci;await fs.rm(root,{recursive:true,force:true});});
- return {root,v,callbacks,ext,context,messages,errors,get pane(){return pane},input:x=>input=x,choice:x=>choice=x,tick:()=>interval(),open:()=>callbacks['dashboard.open'](),ready:()=>callbacks.message({type:'ready'}),edit:()=>callbacks.edit({document:doc,contentChanges:[{text:'x',rangeLength:0,range:{start:{line:0},end:{line:0}}}]})};
+ return {root,v,callbacks,ext,context,messages,errors,get pane(){return pane},get status(){return status},input:x=>input=x,choice:x=>choice=x,tick:()=>interval(),open:()=>callbacks['dashboard.open'](),ready:()=>callbacks.message({type:'ready'}),edit:()=>callbacks.edit({document:doc,contentChanges:[{text:'x',rangeLength:0,range:{start:{line:0},end:{line:0}}}]})};
+}
+function statusRow(id,date,dwell){
+ const start=new Date(date+'T00:00:00').getTime();
+ return {id,day:date,uri:'file:///history/'+id+'.c',path:'/history/'+id+'.c',project:'file:///history/'+id,projectName:id,start,end:start+dwell,dwell,active:0,added:0,deleted:0,linesAdded:0,linesDeleted:0,undo:0,redo:0};
 }
 test('lifecycle regressions',async t=>{
  await t.test('concurrent open requests create one panel and close during read is safe',async t=>{const h=await harness(t);h.edit();await Promise.all([h.open(),h.open()]);const original=Storage.prototype.read;let release,entered;const enter=new Promise(r=>entered=r);Storage.prototype.read=async function(d){entered();await new Promise(r=>release=r);return original.call(this,d)};try{const pending=h.ready();await enter;h.callbacks.dispose();release();await pending;assert.equal(h.messages.length,0);assert.equal(h.errors.length,0);}finally{Storage.prototype.read=original;}});
  await t.test('late previous-date response cannot overwrite newer date',async t=>{const h=await harness(t);h.edit();await h.open();await h.ready();const original=Storage.prototype.read;let release,entered;const enter=new Promise(r=>entered=r);Storage.prototype.read=async function(d){if(d==='2026-10-01'){entered();await new Promise(r=>release=r);}return original.call(this,d)};try{const old=h.callbacks.message({type:'date',value:'2026-10-01'});await enter;await h.callbacks.message({type:'date',value:'2026-10-02'});release();await old;assert.equal(h.messages.at(-1).date,'2026-10-02');}finally{Storage.prototype.read=original;}});
- await t.test('actual deactivate/reactivate preserves history and alias/task patches',async t=>{const h=await harness(t);h.edit();await h.open();await h.ready();h.input('改名');await h.callbacks.message({type:'edit',project:'file:///a',field:'alias'});h.input('DEMO-123');h.choice('SubTask');await h.callbacks.message({type:'edit',project:'file:///a',field:'task'});await h.ext.deactivate();h.ext.activate(h.context);await h.open();await h.ready();assert.equal(h.messages.at(-1).groups[0].name,'改名');assert.equal(h.messages.at(-1).groups[0].task,'DEMO-123');assert.equal(h.messages.at(-1).groups[0].added,1);});
+ await t.test('actual deactivate/reactivate preserves history and alias/task patches',async t=>{const h=await harness(t);h.edit();await h.open();await h.ready();h.input('改名');await h.callbacks.message({type:'edit',project:'file:///a',field:'alias'});h.input('DEMO-123');h.choice('SubTask');await h.callbacks.message({type:'edit',project:'file:///a',field:'task'});await h.ext.deactivate();await h.ext.activate(h.context);await h.open();await h.ready();assert.equal(h.messages.at(-1).groups[0].name,'改名');assert.equal(h.messages.at(-1).groups[0].task,'DEMO-123');assert.equal(h.messages.at(-1).groups[0].added,1);});
  await t.test('cancel dialogs and unknown projects never change metadata',async t=>{const h=await harness(t);h.edit();await h.open();await h.ready();h.input(undefined);await h.callbacks.message({type:'edit',project:'file:///a',field:'alias'});h.input('ABC-1');h.choice(undefined);await h.callbacks.message({type:'edit',project:'file:///a',field:'task'});await h.callbacks.message({type:'edit',project:'file:///unknown',field:'alias'});assert.deepEqual(await new Storage(h.root).metadata(),{});});
  await t.test('invalid messages and impossible dates do not crash or change view',async t=>{const h=await harness(t);await h.open();await h.ready();const before=h.messages.length;for(const m of [null,[],{type:'date',value:'2026-99-01'},{type:'date',value:'../../x'},{type:'edit',project:{},field:'alias'}])await h.callbacks.message(m);assert.equal(h.messages.length,before);assert.equal(h.errors.length,0);});
  await t.test('Dashboard view stops attribution while split editor remains visible',async t=>{const h=await harness(t),real=Date.now;let time=real();Date.now=()=>time;try{time+=1000;h.edit();await h.open();time+=10000;h.tick();await h.ready();const g=h.messages.at(-1).groups[0];assert(g.dwell<2000);assert.equal(g.added,1);}finally{Date.now=real;}});
@@ -25,5 +30,56 @@ test('lifecycle regressions',async t=>{
  await t.test('nontext tabs and unsupported documents create no time or edits',async t=>{const h=await harness(t,{nontext:true});h.callbacks.editor();h.tick();h.callbacks.edit({document:{uri:{scheme:'untitled'}},contentChanges:[{}]});await h.open();await h.ready();assert.equal(h.messages.at(-1).groups.length,0);});
 
  await t.test('old-day pruning never overwrites a full day with one retained session',async t=>{const h=await harness(t),real=Date.now;let time=real();const firstDay=require('../src/core').day(time);Date.now=()=>time;try{h.edit();h.v.window.state.focused=false;h.callbacks.focus();time+=1000;h.v.window.state.focused=true;h.callbacks.focus();h.edit();await h.open();await h.ready();const before=(await new Storage(h.root).read(firstDay)).rows.reduce((s,r)=>s+r.added,0);time+=3*86400000;h.tick();await h.ready();h.tick();await h.ready();assert.equal((await new Storage(h.root).read(firstDay)).rows.reduce((s,r)=>s+r.added,0),before);}finally{Date.now=real;}});
+
+ await t.test('right status starts at zero and remains a dashboard shortcut',async t=>{
+  const h=await harness(t,{nontext:true});
+  assert.equal(h.status.alignment,h.v.StatusBarAlignment.Right);
+  assert.equal(h.status.text,'</> 0 h 0 m');assert.equal(h.status.command,'dashboard.open');
+  await h.open();assert(h.pane);
+ });
+ await t.test('startup sums all today projects using dwell and ignores the viewed historical day',async t=>{
+  const date=require('../src/core').day(Date.now());
+  const h=await harness(t,{nontext:true,seed:[statusRow('a',date,60*60000),statusRow('b',date,65*60000+59999),statusRow('old','2020-01-01',12*3600000)]});
+  assert.equal(h.status.text,'</> 2 h 5 m');
+  await h.open();await h.callbacks.message({type:'date',value:'2020-01-01'});
+  assert.equal(h.status.text,'</> 2 h 5 m');
+ });
+ await t.test('timer includes live time once, updates other windows and restores after restart',async t=>{
+  const real=Date.now;let now=new Date(2026,10,24,9).getTime();Date.now=()=>now;
+  try{
+   const h=await harness(t,{seed:[statusRow('history','2026-11-24',59*60000)]});
+   for(let i=0;i<6;i++){now+=10000;await h.tick();}
+   assert.equal(h.status.text,'</> 1 h 0 m');
+   await h.open();await h.ready();await h.tick();assert.equal(h.status.text,'</> 1 h 0 m');
+   await new Storage(h.root,'other-window').save([statusRow('other','2026-11-24',30*60000)]);
+   await h.tick();assert.equal(h.status.text,'</> 1 h 30 m');
+   await h.ext.deactivate();await h.ext.activate(h.context);assert.equal(h.status.text,'</> 1 h 30 m');
+  }finally{Date.now=real;}
+ });
+ await t.test('status resets at local midnight rather than showing yesterday total',async t=>{
+  const real=Date.now;let now=new Date(2026,10,24,23,59,55).getTime();Date.now=()=>now;
+  try{
+   const h=await harness(t,{seed:[statusRow('history','2026-11-24',2*3600000)]});assert.equal(h.status.text,'</> 2 h 0 m');
+   now+=10000;await h.tick();assert.equal(h.status.text,'</> 0 h 0 m');
+   for(let i=0;i<6;i++){now+=10000;await h.tick();}assert.equal(h.status.text,'</> 0 h 1 m');
+  }finally{Date.now=real;}
+ });
+ await t.test('out-of-order status reads and deactivation never overwrite current display',async t=>{
+  const h=await harness(t,{nontext:true}),orig=Storage.prototype.read;let release,entered;
+  const enter=new Promise(r=>entered=r);let calls=0;
+  Storage.prototype.read=async function(date){if(++calls===1){entered();await new Promise(r=>release=r);return {rows:[statusRow('stale',date,9*3600000)],warnings:[]};}return orig.call(this,date);};
+  try{
+   const old=h.tick();await enter;await h.tick();assert.equal(h.status.text,'</> 0 h 0 m');
+   release();await old;assert.equal(h.status.text,'</> 0 h 0 m');
+   calls=0;const pending=h.tick();await new Promise(r=>setImmediate(r));const item=h.status;
+   await h.ext.deactivate();release();await pending;assert.equal(item.text,'</> 0 h 0 m');
+  }finally{Storage.prototype.read=orig;}
+ });
+ await t.test('failed status reads retain time and report the error without changing the requested format',async t=>{
+  const date=require('../src/core').day(Date.now()),h=await harness(t,{nontext:true,seed:[statusRow('history',date,3600000)]}),orig=Storage.prototype.read;
+  Storage.prototype.read=async()=>{throw Error('read denied')};
+  try{await h.tick();assert.equal(h.status.text,'</> 1 h 0 m');assert(h.status.tooltip.includes('read denied'));assert(h.errors.some(e=>e.includes('read denied')));}finally{Storage.prototype.read=orig;}
+  await h.tick();assert.equal(h.status.text,'</> 1 h 0 m');
+ });
 
 });
