@@ -28,6 +28,7 @@ exports.run = async () => {
   await editor.edit(b => b.insert(new vscode.Position(0, 0), 'TRANSIENT'));
   await editor.edit(b => b.delete(new vscode.Range(0, 0, 0, 9)));
   assert(doc.isDirty, 'Unsaved edits must be observable');
+  await doc.save();
   const focusedAtStart = vscode.window.state.focused;
   let focusLost = !focusedAtStart;
   const focus = vscode.window.onDidChangeWindowState(s => { if (!s.focused) focusLost = true; });
@@ -41,7 +42,10 @@ exports.run = async () => {
    await pause(100);
   }
   assert(rows.some(r => r.added >= 9 && r.deleted >= 9), 'Transient edits must persist');
-  checks.push('unsaved insert/delete persisted');
+  checks.push('transient insert/delete persisted');
+  assert.equal(rows.reduce((n,r)=>n+r.keyboardEvents,0),0,'Programmatic edits must not masquerade as keyboard events');
+  assert(rows.some(r=>r.saves>=1),'Save event must persist');
+  checks.push('programmatic edits do not count as keyboard activity','save event persisted');
   const dwell = rows.reduce((sum, r) => sum + r.dwell, 0);
   await pause(11000);
   const after = (await store.read(day(Date.now()))).rows.filter(r => r.uri === uri.toString());

@@ -5,7 +5,7 @@ async function harness(t,{nontext=false,seed=[]}={}){
  if(seed.length)await new Storage(root,'prior').save(seed);
  const event=k=>fn=>{callbacks[k]=fn;return {dispose(){}}};let pane,interval,input,choice='Task',status;
  const doc={uri:{scheme:'file',fsPath:'/a/main.c',toString:()=> 'file:///a/main.c'}};
- const v={Uri:{joinPath:()=>({})},StatusBarAlignment:{Left:1,Right:2},ViewColumn:{Active:1},window:{activeTextEditor:{document:doc},state:{focused:true},createStatusBarItem:(alignment,priority)=>status={alignment,priority,show(){},dispose(){}},onDidChangeActiveTextEditor:event('editor'),onDidChangeWindowState:event('focus'),onDidChangeTextEditorSelection:event('selection'),onDidChangeTextEditorVisibleRanges:event('scroll'),showErrorMessage:m=>errors.push(m),showInputBox:async()=>input,showQuickPick:async()=>choice,createWebviewPanel:()=>pane={active:true,visible:true,webview:{postMessage:d=>messages.push(d),onDidReceiveMessage:event('message')},onDidDispose:event('dispose'),onDidChangeViewState:event('view'),reveal(){}}},workspace:{getWorkspaceFolder:()=>({name:'a',uri:{toString:()=> 'file:///a'}}),getConfiguration:()=>({get:()=>5}),onDidChangeConfiguration:event('config'),onDidChangeTextDocument:event('edit')},commands:{registerCommand:(k,fn)=>{callbacks[k]=fn;return {dispose(){}}}}};
+ const v={TextEditorSelectionChangeKind:{Keyboard:1,Mouse:2,Command:3},Uri:{joinPath:()=>({})},StatusBarAlignment:{Left:1,Right:2},ViewColumn:{Active:1},window:{activeTextEditor:{document:doc},state:{focused:true},createStatusBarItem:(alignment,priority)=>status={alignment,priority,show(){},dispose(){}},onDidChangeActiveTextEditor:event('editor'),onDidChangeWindowState:event('focus'),onDidChangeTextEditorSelection:event('selection'),onDidChangeTextEditorVisibleRanges:event('scroll'),showErrorMessage:m=>errors.push(m),showInputBox:async()=>input,showQuickPick:async()=>choice,createWebviewPanel:()=>pane={active:true,visible:true,webview:{postMessage:d=>messages.push(d),onDidReceiveMessage:event('message')},onDidDispose:event('dispose'),onDidChangeViewState:event('view'),reveal(){}}},workspace:{getWorkspaceFolder:()=>({name:'a',uri:{toString:()=> 'file:///a'}}),getConfiguration:()=>({get:()=>5}),onDidChangeConfiguration:event('config'),onDidSaveTextDocument:event('save'),onDidChangeTextDocument:event('edit')},commands:{registerCommand:(k,fn)=>{callbacks[k]=fn;return {dispose(){}}}}};
  if(nontext){v.TabInputText=class{};v.window.tabGroups={activeTabGroup:{activeTab:{input:{}}}};}
  const load=Module._load,si=global.setInterval,ci=global.clearInterval;delete require.cache[require.resolve('../src/extension')];Module._load=function(id,...rest){return id==='vscode'?v:load.call(this,id,...rest)};const ext=require('../src/extension');Module._load=load;
  global.setInterval=fn=>{interval=fn;return 1};global.clearInterval=()=>{};
@@ -80,6 +80,39 @@ test('lifecycle regressions',async t=>{
   Storage.prototype.read=async()=>{throw Error('read denied')};
   try{await h.tick();assert.equal(h.status.text,'$(code) 01:00');assert(h.status.tooltip.includes('read denied'));assert(h.errors.some(e=>e.includes('read denied')));}finally{Storage.prototype.read=orig;}
   await h.tick();assert.equal(h.status.text,'$(code) 01:00');
+ });
+
+ await t.test('keyboard selection is counted once; mouse, commands, background and bulk replacements stay separate',async t=>{
+  const h=await harness(t),editor=h.v.window.activeTextEditor;
+  h.callbacks.selection({textEditor:editor,kind:1,selections:[{},{}]});
+  h.callbacks.selection({textEditor:editor,kind:2});
+  h.callbacks.selection({textEditor:editor,kind:3});
+  h.callbacks.selection({textEditor:editor});
+  h.edit();h.callbacks.save(editor.document);
+  h.callbacks.selection({textEditor:{document:{uri:{toString:()=> 'file:///other'}}},kind:1});
+  h.v.window.state.focused=false;h.callbacks.focus();h.callbacks.selection({textEditor:editor,kind:1});
+  await h.open();await h.ready();const g=h.messages.at(-1).groups[0];
+  assert.equal(g.keyboardEvents,1);assert.equal(g.mouseEvents,1);assert.equal(g.changeEvents,1);assert.equal(g.saves,1);
+ });
+ await t.test('merged alias and Jira edits apply to all member paths and survive reload',async t=>{
+  const date=require('../src/core').day(Date.now());
+  const seed=[statusRow('one',date,1000),statusRow('two',date,2000)].map(r=>({...r,projectName:'same'}));
+  const h=await harness(t,{nontext:true,seed});await h.open();await h.ready();
+  assert.equal(h.messages.at(-1).groups.length,1);
+  h.input('merged');await h.callbacks.message({type:'edit',project:seed[0].project,field:'alias'});
+  h.input('DEMO-77');await h.callbacks.message({type:'edit',project:seed[0].project,field:'task'});
+  const meta=await new Storage(h.root).metadata();
+  for(const r of seed){assert.equal(meta[r.project].alias,'merged');assert.equal(meta[r.project].task,'DEMO-77');}
+  await h.ext.deactivate();await h.ext.activate(h.context);await h.open();await h.ready();
+  const groups=h.messages.at(-1).groups;assert.equal(groups.length,1);assert.equal(groups[0].dwell,3000);assert.equal(groups[0].files.length,2);
+ });
+ await t.test('EPERM exhaustion keeps live edits visible with a warning and later flush persists them once',async t=>{
+  const h=await harness(t);h.edit();await h.open();const orig=Storage.prototype.save;
+  Storage.prototype.save=async()=>{throw Object.assign(Error('EPERM: operation not permitted, rename'),{code:'EPERM'});};
+  try{await h.ready();await h.ready();assert.equal(h.messages.at(-1).groups[0].added,1);assert(h.messages.at(-1).warnings.some(w=>w.includes('尚未保存')));assert.equal(h.errors.length,1);}
+  finally{Storage.prototype.save=orig;}
+  await h.ready();assert.equal(h.messages.at(-1).warnings.length,0);assert.equal(h.messages.at(-1).groups[0].added,1);
+  assert.equal((await new Storage(h.root).read(require('../src/core').day(Date.now()))).rows.reduce((n,r)=>n+r.added,0),1);
  });
 
 });

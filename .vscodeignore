@@ -8,3 +8,6 @@ coverage.txt
 docs/native-review/**
 
 .codex-attachments/**
+
+scripts/**
+.github/**

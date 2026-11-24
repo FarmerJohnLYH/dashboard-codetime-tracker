@@ -48,10 +48,15 @@ function currentTarget(){
  return target(vscode.window.activeTextEditor?.document);
 }
 function change(){tracker.set(currentTarget(),vscode.window.state.focused,Date.now());dirty=true;}
-function activity(event){
+function activity(event,selection=false){
  if(!vscode.window.state.focused || !tracker.target)return;
  if(event?.textEditor?.document.uri.toString()!==tracker.target.uri)return;
- tracker.activity(Date.now());dirty=true;
+ if(selection){
+  const kind=vscode.TextEditorSelectionChangeKind;
+  if(event.kind!==kind.Keyboard&&event.kind!==kind.Mouse)return;
+  tracker.interaction(event.kind===kind.Keyboard?'keyboardEvents':'mouseEvents',Date.now());
+ }else tracker.activity(Date.now());
+ dirty=true;
 }
 function flush(){
  if(writing)return writing;
@@ -65,22 +70,27 @@ async function render(){
  const owner=panel;if(!owner)return;
  const version=++renderVersion;
  if(followToday)viewDay=day(Date.now());const date=viewDay;
- await flush();const {rows,warnings}=await store.read(date);const meta=await store.metadata();
+ await flush();const {rows:diskRows,warnings}=await store.read(date);const meta=await store.metadata();
+ const latest=new Map(diskRows.map(r=>[r.id,r]));
+ for(const row of tracker.rows)if(row.day===date)latest.set(row.id,{...row});
+ const rows=[...latest.values()];
+ if(lastError)warnings.push('记录尚未保存，将自动重试：'+lastError);
  if(owner!==panel||version!==renderVersion)return;
  await owner.webview.postMessage({type:'data',date,warnings,groups:summarize(rows,meta),rows:rows.map(r=>({...r,name:meta[r.project]?.alias||r.projectName,task:meta[r.project]?.task||''}))});
 }
-async function editMeta(project,field){
- const meta=await store.metadata(),m=meta[project]||{};let value;
+async function editMeta(projects,field){
+ const meta=await store.metadata(),m=meta[projects[0]]||{};let value;
  if(field==='alias'){
-  const v=await vscode.window.showInputBox({title:'项目重命名',prompt:'仅修改显示名称，完整路径及历史保留',value:m.alias||''});
+  const v=await vscode.window.showInputBox({title:'项目重命名',prompt:'修改当前合并组的全部项目显示名称；同名自动合并，完整路径及历史保留',value:m.alias||''});
   if(v===undefined)return;value={alias:v.trim()};
  }else{
-  const v=await vscode.window.showInputBox({title:'Jira 任务',prompt:'只填写 Task / SubTask；有子任务时填写子任务。留空取消关联。',value:m.task||'',validateInput:v=>!v.trim()||/^[A-Z][A-Z0-9_]*-\d+$/.test(v.trim())?null:'请输入任务号，例如 DEMO-1234'});
+  const v=await vscode.window.showInputBox({title:'Jira 任务',prompt:'关联当前合并组的全部项目；只填写 Task / SubTask。留空取消关联。',value:m.task||'',validateInput:v=>!v.trim()||/^[A-Z][A-Z0-9_]*-\d+$/.test(v.trim())?null:'请输入任务号，例如 DEMO-1234'});
   if(v===undefined)return;const task=v.trim();if(task&&!/^[A-Z][A-Z0-9_]*-\d+$/.test(task))return;
   const type=task?await vscode.window.showQuickPick(['SubTask','Task'],{title:'选择任务类型（手工确认）'}):'Task';
   if(!type)return;value={task,type};
  }
- await store.patch(project,field,value);await render();
+ for(const project of projects)await store.patch(project,field,value);
+ await render();
 }
 async function message(m){
  if(!m||typeof m!=='object')return;
@@ -88,7 +98,10 @@ async function message(m){
   if(m.type==='ready')await render();
   else if(m.type==='date'&&validDay(m.value)){viewDay=m.value;followToday=viewDay===day(Date.now());await render();}
   else if(m.type==='edit'&&['alias','task'].includes(m.field)&&typeof m.project==='string'){
-   const {rows}=await store.read(viewDay);if(rows.some(r=>r.project===m.project))await editMeta(m.project,m.field);
+   const {rows}=await store.read(viewDay),meta=await store.metadata();
+   const live=tracker.rows.filter(r=>r.day===viewDay),latest=new Map([...rows,...live].map(r=>[r.id,r]));
+   const group=summarize([...latest.values()],meta).find(g=>g.projects.includes(m.project));
+   if(group)await editMeta(group.projects,m.field);
   }
  }catch(e){report(e);}
 }
@@ -114,7 +127,8 @@ function activate(context){
  context.subscriptions.push(status,vscode.commands.registerCommand('dashboard.open',()=>open().catch(report)),
  vscode.window.onDidChangeActiveTextEditor(change),vscode.window.onDidChangeWindowState(change),
  vscode.workspace.onDidChangeConfiguration(()=>{tracker.tick(Date.now());tracker.idle=vscode.workspace.getConfiguration('dashboard').get('idleMinutes',5)*60000;}),
- vscode.window.onDidChangeTextEditorSelection(activity),vscode.window.onDidChangeTextEditorVisibleRanges(activity),
+ vscode.window.onDidChangeTextEditorSelection(e=>activity(e,true)),vscode.window.onDidChangeTextEditorVisibleRanges(e=>activity(e)),
+ vscode.workspace.onDidSaveTextDocument(doc=>{const t=target(doc);if(t){tracker.save(t,Date.now());dirty=true;}}),
  vscode.workspace.onDidChangeTextDocument(e=>{const t=target(e.document);if(t&&e.contentChanges.length){tracker.edit(t,e.contentChanges,e.reason,Date.now());dirty=true;}}));
  if(vscode.window.tabGroups?.onDidChangeTabs)context.subscriptions.push(vscode.window.tabGroups.onDidChangeTabs(change));
  change();timer=setInterval(()=>{tracker.tick(Date.now());dirty=true;flush();if(panel?.visible)render().catch(report);return refreshStatus();},10000);

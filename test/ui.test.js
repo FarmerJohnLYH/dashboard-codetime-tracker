@@ -1,3 +1,18 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs');const {JSDOM}=require('jsdom');const {summarize}=require('../src/core');
 test('real page script supports table/timeline, rename messages, dates and escaping',async()=>{const messages=[];const dom=new JSDOM(fs.readFileSync('media/index.html','utf8'),{runScripts:'dangerously',beforeParse(w){w.acquireVsCodeApi=()=>({postMessage:m=>messages.push(m),getState:()=>null,setState(){}})}});const w=dom.window,d=w.document;const r={id:'1',project:'file:///a',projectName:'<img src=x onerror=alert(1)>',name:'Audio',path:'F:\\audio\\a.c',uri:'file:///a/a.c',start:Date.now(),end:Date.now()+10000,dwell:10000,active:10000,added:5,deleted:5};w.dispatchEvent(new w.MessageEvent('message',{data:{type:'data',date:'2026-11-24',rows:[r],groups:summarize([r],{})}}));assert(d.querySelector('table'));assert.equal(d.querySelector('img'),null);d.querySelector('[data-expand]').click();assert(d.body.textContent.includes(r.path));d.querySelector('[data-alias]').click();assert.equal(messages.at(-1).field,'alias');d.querySelector('[data-task]').click();assert.equal(messages.at(-1).field,'task');d.getElementById('timelineTab').click();assert(d.querySelector('.timeline'));assert.equal(d.querySelector('table'),null);d.querySelector('[data-row]').click();assert(d.body.textContent.includes(r.path));d.getElementById('prev').click();assert.equal(messages.at(-1).value,'2026-11-23');w.dispatchEvent(new w.MessageEvent('message',{data:{type:'data',date:'2026-11-25',rows:[],groups:[]}}));assert(d.body.textContent.includes('当天暂无记录'));for(const label of ['暂停','补录','复制填报清单'])assert(!d.body.textContent.includes(label));dom.window.close();});
 test('corrupt restored state falls back and warnings render as text',()=>{const dom=new JSDOM(fs.readFileSync('media/index.html','utf8'),{runScripts:'dangerously',beforeParse(w){w.acquireVsCodeApi=()=>({postMessage(){},getState:()=>({view:'bad',expanded:'bad'}),setState(){}})}});const w=dom.window;w.dispatchEvent(new w.MessageEvent('message',{data:{type:'data',date:'2026-11-24',rows:[],groups:[],warnings:['<script>bad</script>']}}));assert(w.document.getElementById('tableTab').classList.contains('selected'));assert.equal(w.document.getElementById('warnings').textContent,'<script>bad</script>');assert.equal(w.document.getElementById('warnings').children.length,0);dom.window.close();});
+
+test('merged groups expose separate workload, conflicting tasks, legacy unknowns and no worklog column',()=>{
+ const dom=new JSDOM(fs.readFileSync('media/index.html','utf8'),{runScripts:'dangerously'}),w=dom.window,d=w.document;
+ const rows=['a','b'].map((project,i)=>({id:project,project,projectName:'same',uri:project,path:'/full/'+project,start:0,end:1000,dwell:1000,active:500,added:3,deleted:1}));
+ const send=()=>w.dispatchEvent(new w.MessageEvent('message',{data:{type:'data',date:'2026-11-24',rows,groups:summarize(rows,{a:{task:'ABC-1'}})}}));send();
+ assert.equal(d.querySelectorAll('tbody > tr').length,1);assert(d.body.textContent.includes('合并 2 个路径'));
+ assert(d.querySelector('[data-task]').textContent.includes('ABC-1 / 未分配'));
+ assert(!d.body.textContent.includes('填报工时'));assert(!d.body.textContent.includes('累计增删'));
+ assert(d.body.textContent.includes('— 次'));assert(d.body.textContent.includes('非物理按键总数'));
+ Object.assign(rows[0],{metricsVersion:2,keyboardEvents:4,saves:1,changeEvents:2});send();
+ assert(d.body.textContent.includes('4 * 次'));
+ d.querySelector('[data-expand]').click();assert(d.body.textContent.includes('/full/a'));assert(d.body.textContent.includes('/full/b'));
+ d.getElementById('timelineTab').click();d.querySelector('[data-row]').click();assert(d.body.textContent.includes('键盘活动 4 次'));
+ dom.window.close();
+});

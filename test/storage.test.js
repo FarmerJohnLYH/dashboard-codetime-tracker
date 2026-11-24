@@ -14,3 +14,43 @@ test('legacy aliases migrate logically without modifying legacy file',async t=>{
 test('parallel project/field changes cannot overwrite unrelated updates',async t=>{const root=await setup(t),a=new Storage(root),b=new Storage(root);await Promise.all([a.patch('a','alias',{alias:'A'}),b.patch('a','task',{task:'ABC-1',type:'SubTask'}),a.patch('b','alias',{alias:'B'})]);assert.deepEqual(await b.metadata(),{a:{alias:'A',task:'ABC-1',type:'SubTask'},b:{alias:'B'}});});
 test('corrupt metadata is surfaced rather than silently resetting aliases',async t=>{const root=await setup(t),s=new Storage(root);await fs.writeFile(path.join(root,'projects.json'),'{');await assert.rejects(()=>s.metadata());assert.equal(await fs.readFile(path.join(root,'projects.json'),'utf8'),'{');});
 test('invalid counters never reach disk',async t=>{const s=new Storage(await setup(t));await assert.rejects(()=>s.save([{...row(),dwell:-1}]));assert.deepEqual(await s.read('2026-11-24'),{rows:[],warnings:[]});});
+
+test('Windows EPERM rename retries retain old checkpoint until atomic replacement succeeds',async t=>{
+ const root=await setup(t),initial=new Storage(root,'a');await initial.save([row()]);
+ const delays=[];let attempts=0;
+ const s=new Storage(root,'a',{...fs,rename:async(from,to)=>{
+  attempts++;assert.equal(JSON.parse(await fs.readFile(to,'utf8'))[0].added,5);
+  if(attempts<=3)throw Object.assign(Error(`EPERM: operation not permitted, rename '${from}' -> '${to}'`),{code:'EPERM'});
+  return fs.rename(from,to);
+ }},async ms=>delays.push(ms));
+ await s.save([{...row(),added:999}]);assert.equal(attempts,4);assert.deepEqual(delays,[25,50,100]);
+ assert.equal((await s.read('2026-11-24')).rows[0].added,999);
+ assert.equal((await fs.readdir(path.join(root,'records','2026-11-24'))).length,1);
+});
+test('permanent EPERM is bounded, preserves JSON and accepts a later retry',async t=>{
+ const root=await setup(t),initial=new Storage(root,'a');await initial.save([row()]);let locked=true,attempts=0;
+ const s=new Storage(root,'a',{...fs,rename:async(...args)=>{attempts++;if(locked)throw Object.assign(Error('locked'),{code:'EPERM'});return fs.rename(...args);}},async()=>{});
+ await assert.rejects(()=>s.save([{...row(),added:999}]),{code:'EPERM'});assert.equal(attempts,7);
+ assert.equal((await initial.read('2026-11-24')).rows[0].added,5);assert.equal((await fs.readdir(path.join(root,'records','2026-11-24'))).length,1);
+ locked=false;await s.save([{...row(),added:999}]);assert.equal((await initial.read('2026-11-24')).rows[0].added,999);
+});
+test('EACCES and EBUSY transient locks recover; ENOSPC and missing paths are not retried',async t=>{
+ const root=await setup(t);
+ for(const code of ['EACCES','EBUSY','ENOSPC','ENOENT']){
+  let attempts=0;const s=new Storage(root,code,{...fs,rename:async(...args)=>{if(++attempts===1)throw Object.assign(Error(code),{code});return fs.rename(...args);}},async()=>{});
+  if(['EACCES','EBUSY'].includes(code)){await s.save([row()]);assert.equal(attempts,2);}
+  else {await assert.rejects(()=>s.save([row()]),{code});assert.equal(attempts,1);}
+ }
+});
+test('same destination writes are ordered even while a Windows rename retries',async t=>{
+ const root=await setup(t);let attempts=0,release,entered;const enter=new Promise(r=>entered=r);
+ const s=new Storage(root,'a',{...fs,rename:async(...args)=>{if(++attempts===1)throw Object.assign(Error('locked'),{code:'EPERM'});return fs.rename(...args);}},async()=>{entered();await new Promise(r=>release=r);});
+ const first=s.save([row()]);await enter;const second=s.save([{...row(),added:8}]);release();await Promise.all([first,second]);
+ assert.equal((await s.read('2026-11-24')).rows[0].added,8);assert.equal(s.pending.size,0);
+});
+test('new metric schema round-trips alongside legacy records and rejects invalid event counters',async t=>{
+ const s=new Storage(await setup(t),'a');const modern={...row('2'),metricsVersion:2,keyboardEvents:7,mouseEvents:1,saves:2,changeEvents:3};
+ await s.save([row(),modern]);assert.deepEqual((await s.read('2026-11-24')).rows,[row(),modern]);
+ for(const value of [-1,1.5,NaN,undefined])await assert.rejects(()=>s.save([{...modern,keyboardEvents:value}]),/Invalid tracking record/);
+ assert.equal((await s.read('2026-11-24')).rows.length,2);
+});
