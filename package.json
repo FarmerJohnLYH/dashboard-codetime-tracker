@@ -1,0 +1,53 @@
+{
+  "name": "dashboard-simple-code-time-tracker",
+  "displayName": "Dashboard - a simple code time tracker",
+  "description": "Local file-level code time and cumulative edit tracking with a minimal dashboard and timeline.",
+  "version": "0.1.1",
+  "publisher": "farmerjohnlyh",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:coverage": "node --experimental-test-coverage --test test/*.test.js"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "dashboard.open",
+        "title": "Dashboard: Open"
+      }
+    ],
+    "configuration": {
+      "title": "Dashboard",
+      "properties": {
+        "dashboard.idleMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 60,
+          "description": "Active time stops after this many minutes without editor activity."
+        }
+      }
+    }
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@vscode/vsce": "^4.1.1",
+    "jsdom": "^31.0.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/FarmerJohnLYH/dashboard-codetime-tracker.git"
+  }
+}

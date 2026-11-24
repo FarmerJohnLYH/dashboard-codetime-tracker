@@ -1,0 +1,7 @@
+node_modules/**
+test/**
+review/**
+package-lock.json
+*.vsix
+*.zip
+coverage.txt

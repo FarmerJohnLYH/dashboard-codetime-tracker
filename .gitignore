@@ -1,0 +1,12 @@
+node_modules/
+*.vsix
+*.zip
+coverage.txt
+review/
+.vscode-test/
+.env
+.env.*
+*.pem
+*.key
+*.log
+.DS_Store
