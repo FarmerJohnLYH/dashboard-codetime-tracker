@@ -44,13 +44,6 @@
           "minimum": 1,
           "maximum": 60,
           "description": "Active time stops after this many minutes without editor activity."
-        },
-        "dashboard.timelineMinMinutes": {
-          "type": "number",
-          "default": 2,
-          "minimum": 0,
-          "maximum": 1440,
-          "description": "Hide projects whose aggregated dwell time in a half-hour slot is shorter than this many minutes. Use 0 to show all projects. Does not affect the table, totals, or raw export."
         }
       }
     }

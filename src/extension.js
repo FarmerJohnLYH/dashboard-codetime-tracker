@@ -6,7 +6,7 @@ const {randomBytes} = require('node:crypto');
 const {Tracker,day,summarize} = require('./core');
 const {Storage,validDay} = require('./storage');
 const {buildExport} = require('./export');
-const {timeline,validThreshold}=require('./timeline');
+const {timeline}=require('./timeline');
 const os=require('node:os');
 let tracker,store,panel,status,timer,ctx,exporting;
 let dirty=false,writing=null,viewDay,followToday=true,renderVersion=0,opening=null,lastError='';
@@ -79,7 +79,7 @@ async function render(){
  const rows=[...latest.values()];
  if(lastError)warnings.push('记录尚未保存，将自动重试：'+lastError);
  if(owner!==panel||version!==renderVersion)return;
- await owner.webview.postMessage({type:'data',date,warnings,groups:summarize(rows,meta),timeline:timeline(rows,vscode.workspace.getConfiguration('dashboard').get('timelineMinMinutes',2),meta),rows:rows.map(r=>({...r,name:meta[r.project]?.alias||r.projectName}))});
+ await owner.webview.postMessage({type:'data',date,warnings,groups:summarize(rows,meta),timeline:timeline(rows,meta),rows:rows.map(r=>({...r,name:meta[r.project]?.alias||r.projectName}))});
 }
 async function editMeta(projects){
  const meta=await store.metadata(),m=meta[projects[0]]||{};
@@ -109,12 +109,6 @@ async function message(m){
  try{
   if(m.type==='ready')await render();
   else if(m.type==='export')await exportRaw();
-  else if(m.type==='timelineThreshold'&&validThreshold(m.value)){
-   const config=vscode.workspace.getConfiguration('dashboard');
-   const target=config.inspect?.('timelineMinMinutes')?.workspaceValue!==undefined?vscode.ConfigurationTarget.Workspace:vscode.ConfigurationTarget.Global;
-   await config.update('timelineMinMinutes',m.value,target);
-   await render();
-  }
   else if(m.type==='date'&&validDay(m.value)){viewDay=m.value;followToday=viewDay===day(Date.now());await render();}
   else if(m.type==='edit'&&m.field==='alias'&&typeof m.project==='string'){
    const {rows}=await store.read(viewDay),meta=await store.metadata();

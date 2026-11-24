@@ -3,7 +3,7 @@ const {Storage}=require('../src/storage');
 async function harness(t,{nontext=false,seed=[]}={}){
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'dashboard-life-')),callbacks={},messages=[],errors=[],infos=[],warnings=[],disposables=[];
  if(seed.length)await new Storage(root,'prior').save(seed);
- const event=k=>fn=>{callbacks[k]=fn;return {dispose(){}}};let pane,interval,input,choice='Task',status,destination;const settings={idleMinutes:5,timelineMinMinutes:2},updates=[];
+ const event=k=>fn=>{callbacks[k]=fn;return {dispose(){}}};let pane,interval,input,choice='Task',status,destination;const settings={idleMinutes:5},updates=[];
  const doc={uri:{scheme:'file',fsPath:'/a/main.c',toString:()=> 'file:///a/main.c'}};
  const v={ConfigurationTarget:{Global:1,Workspace:2},TextEditorSelectionChangeKind:{Keyboard:1,Mouse:2,Command:3},Uri:{joinPath:()=>({}),file:fsPath=>({fsPath})},StatusBarAlignment:{Left:1,Right:2},ViewColumn:{Active:1},window:{activeTextEditor:{document:doc},state:{focused:true},createStatusBarItem:(alignment,priority)=>status={alignment,priority,show(){},dispose(){}},onDidChangeActiveTextEditor:event('editor'),onDidChangeWindowState:event('focus'),onDidChangeTextEditorSelection:event('selection'),onDidChangeTextEditorVisibleRanges:event('scroll'),showErrorMessage:m=>errors.push(m),showInputBox:async()=>input,showSaveDialog:async()=>destination,showInformationMessage:m=>infos.push(m),showWarningMessage:m=>warnings.push(m),showQuickPick:async()=>choice,createWebviewPanel:()=>pane={active:true,visible:true,webview:{postMessage:d=>messages.push(d),onDidReceiveMessage:event('message')},onDidDispose:event('dispose'),onDidChangeViewState:event('view'),reveal(){}}},workspace:{fs:{writeFile:(uri,bytes)=>fs.writeFile(uri.fsPath,bytes)},getWorkspaceFolder:()=>({name:'a',uri:{toString:()=> 'file:///a'}}),getConfiguration:()=>({get:(key,fallback)=>settings[key]??fallback,update:async(key,value,target)=>{settings[key]=value;updates.push({key,value,target});}}),onDidChangeConfiguration:event('config'),onDidSaveTextDocument:event('save'),onDidChangeTextDocument:event('edit')},commands:{registerCommand:(k,fn)=>{callbacks[k]=fn;return {dispose(){}}}}};
  if(nontext){v.TabInputText=class{};v.window.tabGroups={activeTabGroup:{activeTab:{input:{}}}};}
@@ -153,23 +153,15 @@ test('lifecycle regressions',async t=>{
   const first=h.callbacks['dashboard.export'](),second=h.callbacks['dashboard.export']();release();await Promise.all([first,second]);assert.equal(dialogs,1);assert.equal(writes,1);
  });
 
- await t.test('timeline threshold defaults to 2, persists valid changes, and never changes table totals or raw export',async t=>{
+ await t.test('short projects always appear; obsolete threshold settings/messages are ignored without changing export',async t=>{
   const date=require('../src/core').day(Date.now()),h=await harness(t,{nontext:true,seed:[statusRow('short',date,60000),statusRow('long',date,120000)]});
-  await h.open();await h.ready();let data=h.messages.at(-1);assert.equal(data.timeline.hidden,1);assert.equal(data.timeline.visible,1);assert.equal(data.groups.length,2);
-  await h.callbacks.message({type:'timelineThreshold',value:0});data=h.messages.at(-1);assert.equal(data.timeline.visible,2);assert.equal(h.updates[0].target,1);
-  for(const value of [-1,1441,'2',null,Infinity])await h.callbacks.message({type:'timelineThreshold',value});assert.equal(h.updates.length,1);
-  h.settings.timelineMinMinutes=3;await h.callbacks.config();await h.ready();assert.equal(h.messages.at(-1).timeline.visible,0);
-  h.choice({scope:'day'});const output=path.join(h.root,'unfiltered.json');h.destination({fsPath:output});await h.callbacks['dashboard.export']();assert.equal(JSON.parse(await fs.readFile(output,'utf8')).records.length,2);
+  h.settings.timelineMinMinutes=1440;
+  await h.open();await h.ready();const data=h.messages.at(-1);assert.equal(data.timeline.visible,2);assert.equal(data.groups.length,2);
+  await h.callbacks.message({type:'timelineThreshold',value:1440});assert.equal(h.updates.length,0);assert.equal(h.errors.length,0);
+  const output=path.join(h.root,'all.json');h.destination({fsPath:output});await h.callbacks['dashboard.export']();assert.equal(JSON.parse(await fs.readFile(output,'utf8')).records.length,2);
  });
- await t.test('configuration write failure reports error and retains the prior threshold',async t=>{
-  const h=await harness(t);await h.open();await h.ready();h.v.workspace.getConfiguration=()=>({get:(k,d)=>h.settings[k]??d,update:async()=>{throw Error('settings write denied');}});
-  await h.callbacks.message({type:'timelineThreshold',value:0});assert(h.errors.some(e=>e.includes('settings write denied')));assert.equal(h.settings.timelineMinMinutes,2);
+ await t.test('extension manifest removes timeline filter while retaining active-time idle configuration',()=>{
+  const properties=require('../package.json').contributes.configuration.properties;
+  assert.equal(properties['dashboard.timelineMinMinutes'],undefined);assert.equal(properties['dashboard.idleMinutes'].default,5);
  });
-
- await t.test('timeline control updates an existing workspace override instead of a shadowed global setting',async t=>{
-  const h=await harness(t);await h.open();let target;
-  h.v.workspace.getConfiguration=()=>({get:(k,d)=>h.settings[k]??d,inspect:()=>({workspaceValue:2}),update:async(k,v,t)=>{h.settings[k]=v;target=t;}});
-  await h.callbacks.message({type:'timelineThreshold',value:.5});assert.equal(target,2);assert.equal(h.messages.at(-1).timeline.minMinutes,.5);
- });
-
 });

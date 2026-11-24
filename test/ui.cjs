@@ -33,7 +33,7 @@ const {timeline} = require('../src/timeline');
   const meta = {[r.project]: {alias: r.name, task: 'DEMO-1234', type: 'SubTask'},
    [r2.project]: {alias: r2.name, task: 'DEMO-1234', type: 'SubTask'},[r3.project]:{alias:r.name,task:'DEMO-1234',type:'SubTask'}};
   await page.evaluate(d => window.postMessage(d, '*'), {type: 'data', date: '2026-11-24',
-   timeline:timeline([r,r2,r3],2,meta), rows: [r, r2, r3].map(r => ({...r, task: meta[r.project].task})), groups: summarize([r, r2, r3], meta)});
+   timeline:timeline([r,r2,r3],meta), rows: [r, r2, r3].map(r => ({...r, task: meta[r.project].task})), groups: summarize([r, r2, r3], meta)});
   await page.getByRole('button', {name: '展开文件'}).first().click();
   assert(await page.getByText(r.path, {exact: true}).isVisible());
   assert.equal(await page.getByText('合并 2 个路径',{exact:true}).count(),0);
@@ -72,24 +72,30 @@ const {timeline} = require('../src/timeline');
   const strip=page.locator('.event-strip').first();
   await strip.locator('.event-card').first().waitFor();
   const geometry=await strip.evaluate(el=>({width:el.clientWidth,scrollWidth:el.scrollWidth,cards:[...el.children].map(c=>({width:c.getBoundingClientRect().width,height:c.getBoundingClientRect().height,left:c.getBoundingClientRect().left})),left:el.getBoundingClientRect().left}));
-  assert.equal(geometry.cards.length,6);assert(geometry.scrollWidth>geometry.width);
+  assert.equal(geometry.cards.length,8);assert(geometry.scrollWidth>geometry.width);
   assert(geometry.cards.every(c=>Math.abs(c.width-geometry.cards[0].width)<1&&c.height===132));
   assert(geometry.cards[3].left+geometry.cards[3].width<=geometry.left+geometry.width+1);
   assert(geometry.cards[4].left>=geometry.left+geometry.width);
-  assert.equal(await page.locator('.event-card').filter({hasText:'短事件'}).count(),0);
+  assert.equal(await page.locator('.event-card').filter({hasText:'短事件'}).count(),1);
   const heights=await page.locator('.event-card').evaluateAll(els=>els.map(el=>el.getBoundingClientRect().height));assert(heights.every(h=>h===132));
   if(process.env.DASHBOARD_SCREENSHOTS){await page.screenshot({path:process.env.DASHBOARD_SCREENSHOTS+'/timeline-B-desktop.png',fullPage:true});await page.getByRole('button',{name:'表格',exact:true}).click();await page.screenshot({path:process.env.DASHBOARD_SCREENSHOTS+'/table-minimal.png',fullPage:true});await page.getByRole('button',{name:'时间线',exact:true}).click();}
   await page.getByRole('button',{name:'向右查看项目',exact:true}).first().click();
   await page.waitForFunction(()=>document.querySelector('.event-strip').scrollLeft>100);
   // A refresh must not jump back to the first four cards.
-  await page.waitForTimeout(400);
+  await strip.evaluate(el=>new Promise(resolve=>{let timer;const done=()=>{clearTimeout(timer);el.removeEventListener('scroll',schedule);resolve();};const schedule=()=>{clearTimeout(timer);timer=setTimeout(done,150);};el.addEventListener('scroll',schedule);schedule();}));
   const offset=await strip.evaluate(el=>el.scrollLeft);
   await page.evaluate(d=>window.postMessage(d,'*'),denseData);
   await page.waitForFunction(expected=>Math.abs(document.querySelector('.event-strip').scrollLeft-expected)<2,offset);
-  await strip.locator('.event-card').last().click();assert(await page.locator('.event-detail').isVisible());
+  await strip.locator('button.event-card').last().click();assert(await page.locator('.event-detail').isVisible());
   assert.equal(await strip.locator('.event-card').last().evaluate(el=>el.getBoundingClientRect().height),132);
+  await page.getByRole('button',{name:'收起项目详情'}).click();assert.equal(await page.locator('.event-detail').count(),0);
+  assert(await page.locator('button.event-card:focus').count());
+  assert.equal(await page.locator('#minMinutes').count(),0);
+  const idle=page.locator('.idle-card').first();assert(await idle.count());
+  const projectColor=await page.locator('button.event-card').first().evaluate(el=>getComputedStyle(el).backgroundColor);
+  const idleColor=await idle.evaluate(el=>getComputedStyle(el).backgroundColor);assert.notEqual(projectColor,idleColor);
   for(const count of [1,2,3,4]){
-   const rows=dense.slice(0,count);
+   const rows=dense.slice(0,count).map(r=>({...r,dwell:30*60000/count}));
    await page.evaluate(d=>window.postMessage(d,'*'),{type:'data',date:'2026-11-24',rows,groups:summarize(rows),timeline:timeline(rows)});
    await page.waitForFunction(n=>document.querySelectorAll('.event-card').length===n,count);
    const size=await page.locator('.event-strip').evaluate(el=>({width:el.clientWidth,scroll:el.scrollWidth,widths:[...el.children].map(c=>c.getBoundingClientRect().width)}));
@@ -105,7 +111,7 @@ const {timeline} = require('../src/timeline');
   await page.evaluate(() => window.postMessage({type: 'data', date: '2026-11-25', groups: [], rows: []}, '*'));
   await page.getByText('当天暂无记录', {exact: false}).waitFor();
   assert.deepEqual(errors, []);
-  console.log('UI PASS: half-hour B timeline, 1/2/3/4 equal columns, overflow scrolling, fixed 132px cards, threshold, scroll restoration, details, table/export, 412px layout, four themes, no CSP errors');
+  console.log('UI PASS: half-hour B timeline, 1/2/3/4 equal columns, overflow scrolling, fixed 132px cards, idle cards, all short projects, scroll restoration, details, table/export, 412px layout, four themes, no CSP errors');
  } finally {
   await browser.close();
  }

@@ -1,8 +1,7 @@
 'use strict';
 const HALF_HOUR=30*60000;
-function validThreshold(value){return typeof value==='number'&&Number.isFinite(value)&&value>=0&&value<=1440;}
-function timeline(rows,minMinutes=2,meta={}){
- const threshold=validThreshold(minMinutes)?minMinutes:2,buckets=new Map();let hidden=0,visible=0;
+function timeline(rows,meta={}){
+ const buckets=new Map();let visible=0;
  rows.forEach((row,index)=>{
   if(!Number.isFinite(row.start)||!Number.isFinite(row.end)||row.end<row.start||!Number.isFinite(row.dwell)||row.dwell<0)return;
   const first=new Date(row.start);
@@ -27,11 +26,24 @@ function timeline(rows,minMinutes=2,meta={}){
    slot+=HALF_HOUR;
   }while(slot<end);
  });
+ // Fill gaps only between recorded slots on the same local day. No records
+ // means no timeline; do not manufacture a full day of idle time.
+ const ordered=[...buckets.keys()].sort((a,b)=>a-b);
+ for(let i=1;i<ordered.length;i++){
+  if(new Date(ordered[i-1]).toDateString()!==new Date(ordered[i]).toDateString())continue;
+  for(let slot=ordered[i-1]+HALF_HOUR;slot<ordered[i];slot+=HALF_HOUR){
+   if(!buckets.has(slot))buckets.set(slot,{start:slot,projects:new Map()});
+  }
+ }
  const result=[];
  for(const bucket of [...buckets.values()].sort((a,b)=>a.start-b.start)){
-  const items=[...bucket.projects.values()].filter(p=>{if(p.dwell+1e-7<threshold*60000){hidden++;return false;}visible++;return true;}).sort((a,b)=>a.start-b.start||a.name.localeCompare(b.name));
-  if(items.length)result.push({start:bucket.start,items});
+  const items=[...bucket.projects.values()].sort((a,b)=>a.start-b.start||a.name.localeCompare(b.name));
+  visible+=items.length;
+  const remainder=HALF_HOUR-items.reduce((total,project)=>total+project.dwell,0);
+  // Ignore sub-nanosecond floating-point residue, not short real projects.
+  const idle=remainder>1e-7?remainder:0;
+  result.push({start:bucket.start,items,idle});
  }
- return {minMinutes:threshold,hidden,visible,buckets:result};
+ return {visible,buckets:result};
 }
-module.exports={timeline,validThreshold};
+module.exports={timeline};
