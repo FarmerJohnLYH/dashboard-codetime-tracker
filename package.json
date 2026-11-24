@@ -29,6 +29,10 @@
       {
         "command": "dashboard.open",
         "title": "Dashboard: Open"
+      },
+      {
+        "command": "dashboard.export",
+        "title": "Dashboard: Export Raw Data"
       }
     ],
     "configuration": {

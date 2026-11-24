@@ -17,9 +17,9 @@ test('effective aliases merge across names and different aliases separate a same
  input[1].projectName='c425kv1';assert.equal(summarize(input,{[b.project]:{alias:'separate'}}).length,2);
  assert.equal(summarize(input,{[b.project]:{alias:'C425kv1'}}).length,2);
 });
-test('conflicting Jira tasks and unassigned members remain visible after merging',()=>{
- const [g]=summarize(rows(),{[a.project]:{task:'A-1',type:'Task'}});
- assert.equal(g.task,'');assert.deepEqual(g.tasks,[{task:'A-1',type:'Task'},{task:'',type:'Task'}]);
+test('legacy Jira metadata is retained externally but omitted from project summaries',()=>{
+ const metadata={[a.project]:{task:'A-1',type:'Task'}},[g]=summarize(rows(),metadata);
+ assert.equal(g.task,undefined);assert.equal(g.tasks,undefined);assert.equal(metadata[a.project].task,'A-1');
 });
 test('repeated sessions of one URI count one changed file',()=>{
  const input=rows();input[1]={...input[0],id:'2'};

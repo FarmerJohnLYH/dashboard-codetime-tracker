@@ -1,17 +1,17 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),Module=require('node:module'),fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os');
 const {Storage}=require('../src/storage');
 async function harness(t,{nontext=false,seed=[]}={}){
- const root=await fs.mkdtemp(path.join(os.tmpdir(),'dashboard-life-')),callbacks={},messages=[],errors=[],disposables=[];
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'dashboard-life-')),callbacks={},messages=[],errors=[],infos=[],warnings=[],disposables=[];
  if(seed.length)await new Storage(root,'prior').save(seed);
- const event=k=>fn=>{callbacks[k]=fn;return {dispose(){}}};let pane,interval,input,choice='Task',status;
+ const event=k=>fn=>{callbacks[k]=fn;return {dispose(){}}};let pane,interval,input,choice='Task',status,destination;
  const doc={uri:{scheme:'file',fsPath:'/a/main.c',toString:()=> 'file:///a/main.c'}};
- const v={TextEditorSelectionChangeKind:{Keyboard:1,Mouse:2,Command:3},Uri:{joinPath:()=>({})},StatusBarAlignment:{Left:1,Right:2},ViewColumn:{Active:1},window:{activeTextEditor:{document:doc},state:{focused:true},createStatusBarItem:(alignment,priority)=>status={alignment,priority,show(){},dispose(){}},onDidChangeActiveTextEditor:event('editor'),onDidChangeWindowState:event('focus'),onDidChangeTextEditorSelection:event('selection'),onDidChangeTextEditorVisibleRanges:event('scroll'),showErrorMessage:m=>errors.push(m),showInputBox:async()=>input,showQuickPick:async()=>choice,createWebviewPanel:()=>pane={active:true,visible:true,webview:{postMessage:d=>messages.push(d),onDidReceiveMessage:event('message')},onDidDispose:event('dispose'),onDidChangeViewState:event('view'),reveal(){}}},workspace:{getWorkspaceFolder:()=>({name:'a',uri:{toString:()=> 'file:///a'}}),getConfiguration:()=>({get:()=>5}),onDidChangeConfiguration:event('config'),onDidSaveTextDocument:event('save'),onDidChangeTextDocument:event('edit')},commands:{registerCommand:(k,fn)=>{callbacks[k]=fn;return {dispose(){}}}}};
+ const v={TextEditorSelectionChangeKind:{Keyboard:1,Mouse:2,Command:3},Uri:{joinPath:()=>({}),file:fsPath=>({fsPath})},StatusBarAlignment:{Left:1,Right:2},ViewColumn:{Active:1},window:{activeTextEditor:{document:doc},state:{focused:true},createStatusBarItem:(alignment,priority)=>status={alignment,priority,show(){},dispose(){}},onDidChangeActiveTextEditor:event('editor'),onDidChangeWindowState:event('focus'),onDidChangeTextEditorSelection:event('selection'),onDidChangeTextEditorVisibleRanges:event('scroll'),showErrorMessage:m=>errors.push(m),showInputBox:async()=>input,showSaveDialog:async()=>destination,showInformationMessage:m=>infos.push(m),showWarningMessage:m=>warnings.push(m),showQuickPick:async()=>choice,createWebviewPanel:()=>pane={active:true,visible:true,webview:{postMessage:d=>messages.push(d),onDidReceiveMessage:event('message')},onDidDispose:event('dispose'),onDidChangeViewState:event('view'),reveal(){}}},workspace:{fs:{writeFile:(uri,bytes)=>fs.writeFile(uri.fsPath,bytes)},getWorkspaceFolder:()=>({name:'a',uri:{toString:()=> 'file:///a'}}),getConfiguration:()=>({get:()=>5}),onDidChangeConfiguration:event('config'),onDidSaveTextDocument:event('save'),onDidChangeTextDocument:event('edit')},commands:{registerCommand:(k,fn)=>{callbacks[k]=fn;return {dispose(){}}}}};
  if(nontext){v.TabInputText=class{};v.window.tabGroups={activeTabGroup:{activeTab:{input:{}}}};}
  const load=Module._load,si=global.setInterval,ci=global.clearInterval;delete require.cache[require.resolve('../src/extension')];Module._load=function(id,...rest){return id==='vscode'?v:load.call(this,id,...rest)};const ext=require('../src/extension');Module._load=load;
  global.setInterval=fn=>{interval=fn;return 1};global.clearInterval=()=>{};
  const context={globalStorageUri:{fsPath:root},extensionPath:path.resolve(__dirname,'..'),subscriptions:disposables};await ext.activate(context);
  t.after(async()=>{await ext.deactivate();global.setInterval=si;global.clearInterval=ci;await fs.rm(root,{recursive:true,force:true});});
- return {root,v,callbacks,ext,context,messages,errors,get pane(){return pane},get status(){return status},input:x=>input=x,choice:x=>choice=x,tick:()=>interval(),open:()=>callbacks['dashboard.open'](),ready:()=>callbacks.message({type:'ready'}),edit:()=>callbacks.edit({document:doc,contentChanges:[{text:'x',rangeLength:0,range:{start:{line:0},end:{line:0}}}]})};
+ return {root,v,callbacks,ext,context,messages,errors,infos,warnings,destination:x=>destination=x,get pane(){return pane},get status(){return status},input:x=>input=x,choice:x=>choice=x,tick:()=>interval(),open:()=>callbacks['dashboard.open'](),ready:()=>callbacks.message({type:'ready'}),edit:()=>callbacks.edit({document:doc,contentChanges:[{text:'x',rangeLength:0,range:{start:{line:0},end:{line:0}}}]})};
 }
 function statusRow(id,date,dwell){
  const start=new Date(date+'T00:00:00').getTime();
@@ -20,7 +20,7 @@ function statusRow(id,date,dwell){
 test('lifecycle regressions',async t=>{
  await t.test('concurrent open requests create one panel and close during read is safe',async t=>{const h=await harness(t);h.edit();await Promise.all([h.open(),h.open()]);const original=Storage.prototype.read;let release,entered;const enter=new Promise(r=>entered=r);Storage.prototype.read=async function(d){entered();await new Promise(r=>release=r);return original.call(this,d)};try{const pending=h.ready();await enter;h.callbacks.dispose();release();await pending;assert.equal(h.messages.length,0);assert.equal(h.errors.length,0);}finally{Storage.prototype.read=original;}});
  await t.test('late previous-date response cannot overwrite newer date',async t=>{const h=await harness(t);h.edit();await h.open();await h.ready();const original=Storage.prototype.read;let release,entered;const enter=new Promise(r=>entered=r);Storage.prototype.read=async function(d){if(d==='2026-10-01'){entered();await new Promise(r=>release=r);}return original.call(this,d)};try{const old=h.callbacks.message({type:'date',value:'2026-10-01'});await enter;await h.callbacks.message({type:'date',value:'2026-10-02'});release();await old;assert.equal(h.messages.at(-1).date,'2026-10-02');}finally{Storage.prototype.read=original;}});
- await t.test('actual deactivate/reactivate preserves history and alias/task patches',async t=>{const h=await harness(t);h.edit();await h.open();await h.ready();h.input('改名');await h.callbacks.message({type:'edit',project:'file:///a',field:'alias'});h.input('DEMO-123');h.choice('SubTask');await h.callbacks.message({type:'edit',project:'file:///a',field:'task'});await h.ext.deactivate();await h.ext.activate(h.context);await h.open();await h.ready();assert.equal(h.messages.at(-1).groups[0].name,'改名');assert.equal(h.messages.at(-1).groups[0].task,'DEMO-123');assert.equal(h.messages.at(-1).groups[0].added,1);});
+ await t.test('actual deactivate/reactivate preserves history and aliases; removed task messages are ignored',async t=>{const h=await harness(t);h.edit();await h.open();await h.ready();h.input('改名');await h.callbacks.message({type:'edit',project:'file:///a',field:'alias'});h.input('DEMO-123');h.choice('SubTask');await h.callbacks.message({type:'edit',project:'file:///a',field:'task'});await h.ext.deactivate();await h.ext.activate(h.context);await h.open();await h.ready();assert.equal(h.messages.at(-1).groups[0].name,'改名');assert.equal(h.messages.at(-1).groups[0].task,undefined);assert.equal((await new Storage(h.root).metadata())['file:///a'].task,undefined);assert.equal(h.messages.at(-1).groups[0].added,1);});
  await t.test('cancel dialogs and unknown projects never change metadata',async t=>{const h=await harness(t);h.edit();await h.open();await h.ready();h.input(undefined);await h.callbacks.message({type:'edit',project:'file:///a',field:'alias'});h.input('ABC-1');h.choice(undefined);await h.callbacks.message({type:'edit',project:'file:///a',field:'task'});await h.callbacks.message({type:'edit',project:'file:///unknown',field:'alias'});assert.deepEqual(await new Storage(h.root).metadata(),{});});
  await t.test('invalid messages and impossible dates do not crash or change view',async t=>{const h=await harness(t);await h.open();await h.ready();const before=h.messages.length;for(const m of [null,[],{type:'date',value:'2026-99-01'},{type:'date',value:'../../x'},{type:'edit',project:{},field:'alias'}])await h.callbacks.message(m);assert.equal(h.messages.length,before);assert.equal(h.errors.length,0);});
  await t.test('Dashboard view stops attribution while split editor remains visible',async t=>{const h=await harness(t),real=Date.now;let time=real();Date.now=()=>time;try{time+=1000;h.edit();await h.open();time+=10000;h.tick();await h.ready();const g=h.messages.at(-1).groups[0];assert(g.dwell<2000);assert.equal(g.added,1);}finally{Date.now=real;}});
@@ -94,7 +94,7 @@ test('lifecycle regressions',async t=>{
   await h.open();await h.ready();const g=h.messages.at(-1).groups[0];
   assert.equal(g.keyboardEvents,1);assert.equal(g.mouseEvents,1);assert.equal(g.changeEvents,1);assert.equal(g.saves,1);
  });
- await t.test('merged alias and Jira edits apply to all member paths and survive reload',async t=>{
+ await t.test('merged alias edits apply to all member paths; removed Jira editing cannot change history',async t=>{
   const date=require('../src/core').day(Date.now());
   const seed=[statusRow('one',date,1000),statusRow('two',date,2000)].map(r=>({...r,projectName:'same'}));
   const h=await harness(t,{nontext:true,seed});await h.open();await h.ready();
@@ -102,7 +102,7 @@ test('lifecycle regressions',async t=>{
   h.input('merged');await h.callbacks.message({type:'edit',project:seed[0].project,field:'alias'});
   h.input('DEMO-77');await h.callbacks.message({type:'edit',project:seed[0].project,field:'task'});
   const meta=await new Storage(h.root).metadata();
-  for(const r of seed){assert.equal(meta[r.project].alias,'merged');assert.equal(meta[r.project].task,'DEMO-77');}
+  for(const r of seed){assert.equal(meta[r.project].alias,'merged');assert.equal(meta[r.project].task,undefined);}
   await h.ext.deactivate();await h.ext.activate(h.context);await h.open();await h.ready();
   const groups=h.messages.at(-1).groups;assert.equal(groups.length,1);assert.equal(groups[0].dwell,3000);assert.equal(groups[0].files.length,2);
  });
@@ -113,6 +113,44 @@ test('lifecycle regressions',async t=>{
   finally{Storage.prototype.save=orig;}
   await h.ready();assert.equal(h.messages.at(-1).warnings.length,0);assert.equal(h.messages.at(-1).groups[0].added,1);
   assert.equal((await new Storage(h.root).read(require('../src/core').day(Date.now()))).rows.reduce((n,r)=>n+r.added,0),1);
+ });
+
+ await t.test('export button writes selected raw JSON including live data without counting it twice',async t=>{
+  const h=await harness(t);h.edit();await h.open();await h.ready();
+  h.choice({scope:'day'});const output=path.join(h.root,'export.json');h.destination({fsPath:output});
+  await h.callbacks.message({type:'export'});
+  const data=JSON.parse(await fs.readFile(output,'utf8'));assert.equal(data.schemaVersion,1);assert.equal(data.scope.kind,'day');
+  assert.equal(data.records.reduce((n,r)=>n+r.added,0),1);assert.equal(data.records[0].uri,'file:///a/main.c');assert.equal(h.infos.length,1);
+ });
+ await t.test('export current date follows the selected historical day; all-history includes other dates',async t=>{
+  const today=require('../src/core').day(Date.now());const h=await harness(t,{nontext:true,seed:[statusRow('old','2020-01-01',1000),statusRow('today',today,2000)]});
+  await h.open();await h.callbacks.message({type:'date',value:'2020-01-01'});
+  const output=path.join(h.root,'export.json');h.destination({fsPath:output});h.choice({scope:'day'});
+  await h.callbacks['dashboard.export']();let data=JSON.parse(await fs.readFile(output,'utf8'));assert.deepEqual(data.scope.dates,['2020-01-01']);assert.equal(data.records.length,1);
+  h.choice({scope:'all'});await h.callbacks['dashboard.export']();data=JSON.parse(await fs.readFile(output,'utf8'));assert.equal(data.records.length,2);
+ });
+ await t.test('canceling scope or save dialog never writes an export or reports success',async t=>{
+  const h=await harness(t);let writes=0;h.v.workspace.fs.writeFile=async()=>writes++;
+  h.choice(undefined);await h.callbacks['dashboard.export']();h.choice({scope:'all'});h.destination(undefined);await h.callbacks['dashboard.export']();
+  assert.equal(writes,0);assert.equal(h.infos.length,0);assert.equal(h.errors.length,0);
+ });
+ await t.test('export retains unflushed memory on storage error, reports destination errors, and can retry',async t=>{
+  const h=await harness(t);h.edit();h.choice({scope:'all'});const output=path.join(h.root,'export.json');h.destination({fsPath:output});
+  const save=Storage.prototype.save;Storage.prototype.save=async()=>{throw Object.assign(Error('EPERM saving records'),{code:'EPERM'});};
+  try{await h.callbacks['dashboard.export']();assert.equal(JSON.parse(await fs.readFile(output,'utf8')).records[0].added,1);}finally{Storage.prototype.save=save;}
+  const write=h.v.workspace.fs.writeFile;h.v.workspace.fs.writeFile=async()=>{throw Object.assign(Error('ENOSPC export target'),{code:'ENOSPC'});};
+  await h.callbacks['dashboard.export']();assert.equal(h.infos.length,1);assert(h.errors.some(e=>e.includes('ENOSPC export target')));
+  h.v.workspace.fs.writeFile=write;await h.callbacks['dashboard.export']();assert.equal(h.infos.length,2);
+ });
+ await t.test('corrupt source records remain intact and export explicitly warns about incomplete data',async t=>{
+  const date=require('../src/core').day(Date.now()),h=await harness(t,{seed:[statusRow('good',date,1000)]});
+  const broken=path.join(h.root,'records',date,'broken.json');await fs.writeFile(broken,'{');h.choice({scope:'all'});const output=path.join(h.root,'export.json');h.destination({fsPath:output});
+  await h.callbacks['dashboard.export']();const data=JSON.parse(await fs.readFile(output,'utf8'));assert.equal(data.warnings.length,1);assert.equal(h.warnings.length,1);assert.equal(h.infos.length,0);assert.equal(await fs.readFile(broken,'utf8'),'{');
+ });
+ await t.test('concurrent export requests share one dialog and one write',async t=>{
+  const h=await harness(t);let release,dialogs=0,writes=0;
+  h.v.window.showQuickPick=async()=>{dialogs++;await new Promise(r=>release=r);return {scope:'day'};};h.destination({fsPath:path.join(h.root,'export.json')});h.v.workspace.fs.writeFile=async()=>writes++;
+  const first=h.callbacks['dashboard.export'](),second=h.callbacks['dashboard.export']();release();await Promise.all([first,second]);assert.equal(dialogs,1);assert.equal(writes,1);
  });
 
 });

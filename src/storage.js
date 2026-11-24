@@ -43,6 +43,7 @@ class Storage {
  }
  async json(file,fallback) {try{return JSON.parse(await this.io.readFile(file,'utf8'));}catch(e){if(e.code==='ENOENT')return fallback;throw e;}}
  async list(dir) {try{return await this.io.readdir(dir);}catch(e){if(e.code==='ENOENT')return [];throw e;}}
+ async dates() {return (await this.list(path.join(this.root,'records'))).filter(validDay).sort();}
  async read(date) {
   if(!validDay(date))throw Error('Invalid date');const rows=[],warnings=[];const dir=path.join(this.root,'records',date);
   for(const file of (await this.list(dir)).filter(n=>n.endsWith('.json')).sort()){

@@ -5,7 +5,9 @@ const path = require('node:path');
 const {randomBytes} = require('node:crypto');
 const {Tracker,day,summarize} = require('./core');
 const {Storage,validDay} = require('./storage');
-let tracker,store,panel,status,timer,ctx;
+const {buildExport} = require('./export');
+const os=require('node:os');
+let tracker,store,panel,status,timer,ctx,exporting;
 let dirty=false,writing=null,viewDay,followToday=true,renderVersion=0,opening=null,lastError='';
 let statusVersion=0,statusDay,statusTotal=0,statusWarnings=[];
 function drawStatus(){
@@ -76,32 +78,47 @@ async function render(){
  const rows=[...latest.values()];
  if(lastError)warnings.push('记录尚未保存，将自动重试：'+lastError);
  if(owner!==panel||version!==renderVersion)return;
- await owner.webview.postMessage({type:'data',date,warnings,groups:summarize(rows,meta),rows:rows.map(r=>({...r,name:meta[r.project]?.alias||r.projectName,task:meta[r.project]?.task||''}))});
+ await owner.webview.postMessage({type:'data',date,warnings,groups:summarize(rows,meta),rows:rows.map(r=>({...r,name:meta[r.project]?.alias||r.projectName}))});
 }
-async function editMeta(projects,field){
- const meta=await store.metadata(),m=meta[projects[0]]||{};let value;
- if(field==='alias'){
-  const v=await vscode.window.showInputBox({title:'项目重命名',prompt:'修改当前合并组的全部项目显示名称；同名自动合并，完整路径及历史保留',value:m.alias||''});
-  if(v===undefined)return;value={alias:v.trim()};
- }else{
-  const v=await vscode.window.showInputBox({title:'Jira 任务',prompt:'关联当前合并组的全部项目；只填写 Task / SubTask。留空取消关联。',value:m.task||'',validateInput:v=>!v.trim()||/^[A-Z][A-Z0-9_]*-\d+$/.test(v.trim())?null:'请输入任务号，例如 DEMO-1234'});
-  if(v===undefined)return;const task=v.trim();if(task&&!/^[A-Z][A-Z0-9_]*-\d+$/.test(task))return;
-  const type=task?await vscode.window.showQuickPick(['SubTask','Task'],{title:'选择任务类型（手工确认）'}):'Task';
-  if(!type)return;value={task,type};
- }
- for(const project of projects)await store.patch(project,field,value);
+async function editMeta(projects){
+ const meta=await store.metadata(),m=meta[projects[0]]||{};
+ const value=await vscode.window.showInputBox({title:'项目重命名',prompt:'修改当前合并组的全部项目显示名称；同名自动合并，完整路径及历史保留',value:m.alias||''});
+ if(value===undefined)return;
+ for(const project of projects)await store.patch(project,'alias',{alias:value.trim()});
  await render();
+}
+function exportRaw(){
+ if(exporting)return exporting;
+ exporting=(async()=>{
+  const date=followToday?day(Date.now()):viewDay;
+  const selection=await vscode.window.showQuickPick([
+   {label:'当前日期',description:date,scope:'day'},
+   {label:'全部历史',description:'导出所有可读取的日期及当前未保存记录',scope:'all'}
+  ],{title:'导出统计原始数据',placeHolder:'JSON 格式，保留逐条记录及完整路径'});
+  if(!selection)return;
+  const destination=await vscode.window.showSaveDialog({title:'保存统计原始数据',defaultUri:vscode.Uri.file(path.join(os.homedir(),'dashboard-raw-'+(selection.scope==='day'?date:'all')+'.json')),filters:{JSON:['json']},saveLabel:'导出'});
+  if(!destination)return;
+  tracker.tick(Date.now());dirty=true;
+  await flush();
+  const payload=await buildExport(store,tracker.rows,{scope:selection.scope,date});
+  await vscode.workspace.fs.writeFile(destination,Buffer.from(JSON.stringify(payload,null,2)+'\n','utf8'));
+  const message=`已导出 ${payload.records.length} 条原始记录。`;
+  if(payload.warnings.length)await vscode.window.showWarningMessage(message+' 部分损坏记录无法读取，详见 JSON 中的 warnings；原文件已保留。');
+  else await vscode.window.showInformationMessage(message);
+ })().catch(report).finally(()=>{exporting=null;});
+ return exporting;
 }
 async function message(m){
  if(!m||typeof m!=='object')return;
  try{
   if(m.type==='ready')await render();
+  else if(m.type==='export')await exportRaw();
   else if(m.type==='date'&&validDay(m.value)){viewDay=m.value;followToday=viewDay===day(Date.now());await render();}
-  else if(m.type==='edit'&&['alias','task'].includes(m.field)&&typeof m.project==='string'){
+  else if(m.type==='edit'&&m.field==='alias'&&typeof m.project==='string'){
    const {rows}=await store.read(viewDay),meta=await store.metadata();
    const live=tracker.rows.filter(r=>r.day===viewDay),latest=new Map([...rows,...live].map(r=>[r.id,r]));
    const group=summarize([...latest.values()],meta).find(g=>g.projects.includes(m.project));
-   if(group)await editMeta(group.projects,m.field);
+   if(group)await editMeta(group.projects);
   }
  }catch(e){report(e);}
 }
@@ -118,13 +135,14 @@ async function open(){
  })().finally(()=>opening=null);return opening;
 }
 function activate(context){
- ctx=context;dirty=false;writing=null;panel=null;opening=null;lastError='';renderVersion=0;
+ ctx=context;exporting=null;dirty=false;writing=null;panel=null;opening=null;lastError='';renderVersion=0;
  viewDay=day(Date.now());followToday=true;
  store=new Storage(context.globalStorageUri.fsPath);
  tracker=new Tracker(vscode.workspace.getConfiguration('dashboard').get('idleMinutes',5)*60000);
  statusDay=day(Date.now());statusTotal=0;statusWarnings=[];
  status=vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right,1);status.name='Dashboard 今日总时间';status.command='dashboard.open';drawStatus();status.show();
  context.subscriptions.push(status,vscode.commands.registerCommand('dashboard.open',()=>open().catch(report)),
+ vscode.commands.registerCommand('dashboard.export',exportRaw),
  vscode.window.onDidChangeActiveTextEditor(change),vscode.window.onDidChangeWindowState(change),
  vscode.workspace.onDidChangeConfiguration(()=>{tracker.tick(Date.now());tracker.idle=vscode.workspace.getConfiguration('dashboard').get('idleMinutes',5)*60000;}),
  vscode.window.onDidChangeTextEditorSelection(e=>activity(e,true)),vscode.window.onDidChangeTextEditorVisibleRanges(e=>activity(e)),

@@ -54,3 +54,9 @@ test('new metric schema round-trips alongside legacy records and rejects invalid
  for(const value of [-1,1.5,NaN,undefined])await assert.rejects(()=>s.save([{...modern,keyboardEvents:value}]),/Invalid tracking record/);
  assert.equal((await s.read('2026-11-24')).rows.length,2);
 });
+
+test('export date enumeration ignores temporary and invalid day names and sorts real days',async t=>{
+ const root=await setup(t),s=new Storage(root,'a');assert.deepEqual(await s.dates(),[]);
+ await s.save([row('a','2026-11-25'),row('b','2026-11-24')]);await fs.mkdir(path.join(root,'records','2026-02-30'));await fs.mkdir(path.join(root,'records','pending.tmp'));
+ assert.deepEqual(await s.dates(),['2026-11-24','2026-11-25']);
+});

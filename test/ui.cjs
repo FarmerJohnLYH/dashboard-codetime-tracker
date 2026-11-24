@@ -38,6 +38,8 @@ const {summarize} = require('../src/core');
   assert(await page.getByText('合并 2 个路径',{exact:true}).isVisible());
   assert(await page.getByText(r3.path,{exact:true}).isVisible());
   assert.equal(await page.getByText('填报工时', {exact: true}).count(), 0);
+  assert.equal(await page.getByText('Jira任务', {exact: true}).count(), 0);
+  assert(await page.getByRole('button',{name:'导出原始数据'}).isVisible());
   assert.equal(await page.getByText('键盘活动', {exact: true}).count(), 1);
   if(process.env.DASHBOARD_SCREENSHOTS){
    await fs.mkdir(process.env.DASHBOARD_SCREENSHOTS,{recursive:true});

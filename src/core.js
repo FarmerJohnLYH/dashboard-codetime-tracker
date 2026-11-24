@@ -31,15 +31,13 @@ function summarize(rows,meta={}){
  for(const r of rows){
   const m=meta[r.project]||{},name=m.alias?.trim()||r.projectName;
   let g=groups.get(name);
-  if(!g){g={project:r.project,projects:[],name,tasks:[],...summaryCounters(),files:[]};groups.set(name,g);}
+  if(!g){g={project:r.project,projects:[],name,...summaryCounters(),files:[]};groups.set(name,g);}
   if(!g.projects.includes(r.project))g.projects.push(r.project);
-  const task=m.task||'',type=m.type||'Task';
-  if(!g.tasks.some(x=>x.task===task&&x.type===type))g.tasks.push({task,type});
   addCounters(g,r);
   let f=g.files.find(f=>f.uri===r.uri);
   if(!f){f={uri:r.uri,path:r.path,project:r.project,...summaryCounters()};g.files.push(f);}
   addCounters(f,r);
  }
- return [...groups.values()].map(g=>({...g,task:g.tasks.length===1?g.tasks[0].task:'',type:g.tasks.length===1?g.tasks[0].type:'',changedFiles:g.files.filter(f=>f.changeEvents||f.added||f.deleted).length}));
+ return [...groups.values()].map(g=>({...g,changedFiles:g.files.filter(f=>f.changeEvents||f.added||f.deleted).length}));
 }
 module.exports={Tracker,day,count,summarize,eventCounters};
