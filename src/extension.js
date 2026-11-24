@@ -6,6 +6,7 @@ const {randomBytes} = require('node:crypto');
 const {Tracker,day,summarize} = require('./core');
 const {Storage,validDay} = require('./storage');
 const {buildExport} = require('./export');
+const {timeline,validThreshold}=require('./timeline');
 const os=require('node:os');
 let tracker,store,panel,status,timer,ctx,exporting;
 let dirty=false,writing=null,viewDay,followToday=true,renderVersion=0,opening=null,lastError='';
@@ -78,7 +79,7 @@ async function render(){
  const rows=[...latest.values()];
  if(lastError)warnings.push('记录尚未保存，将自动重试：'+lastError);
  if(owner!==panel||version!==renderVersion)return;
- await owner.webview.postMessage({type:'data',date,warnings,groups:summarize(rows,meta),rows:rows.map(r=>({...r,name:meta[r.project]?.alias||r.projectName}))});
+ await owner.webview.postMessage({type:'data',date,warnings,groups:summarize(rows,meta),timeline:timeline(rows,vscode.workspace.getConfiguration('dashboard').get('timelineMinMinutes',2)),rows:rows.map(r=>({...r,name:meta[r.project]?.alias||r.projectName}))});
 }
 async function editMeta(projects){
  const meta=await store.metadata(),m=meta[projects[0]]||{};
@@ -113,6 +114,12 @@ async function message(m){
  try{
   if(m.type==='ready')await render();
   else if(m.type==='export')await exportRaw();
+  else if(m.type==='timelineThreshold'&&validThreshold(m.value)){
+   const config=vscode.workspace.getConfiguration('dashboard');
+   const target=config.inspect?.('timelineMinMinutes')?.workspaceValue!==undefined?vscode.ConfigurationTarget.Workspace:vscode.ConfigurationTarget.Global;
+   await config.update('timelineMinMinutes',m.value,target);
+   await render();
+  }
   else if(m.type==='date'&&validDay(m.value)){viewDay=m.value;followToday=viewDay===day(Date.now());await render();}
   else if(m.type==='edit'&&m.field==='alias'&&typeof m.project==='string'){
    const {rows}=await store.read(viewDay),meta=await store.metadata();
@@ -144,7 +151,7 @@ function activate(context){
  context.subscriptions.push(status,vscode.commands.registerCommand('dashboard.open',()=>open().catch(report)),
  vscode.commands.registerCommand('dashboard.export',exportRaw),
  vscode.window.onDidChangeActiveTextEditor(change),vscode.window.onDidChangeWindowState(change),
- vscode.workspace.onDidChangeConfiguration(()=>{tracker.tick(Date.now());tracker.idle=vscode.workspace.getConfiguration('dashboard').get('idleMinutes',5)*60000;}),
+ vscode.workspace.onDidChangeConfiguration(()=>{tracker.tick(Date.now());tracker.idle=vscode.workspace.getConfiguration('dashboard').get('idleMinutes',5)*60000;if(panel)render().catch(report);}),
  vscode.window.onDidChangeTextEditorSelection(e=>activity(e,true)),vscode.window.onDidChangeTextEditorVisibleRanges(e=>activity(e)),
  vscode.workspace.onDidSaveTextDocument(doc=>{const t=target(doc);if(t){tracker.save(t,Date.now());dirty=true;}}),
  vscode.workspace.onDidChangeTextDocument(e=>{const t=target(e.document);if(t&&e.contentChanges.length){tracker.edit(t,e.contentChanges,e.reason,Date.now());dirty=true;}}));
