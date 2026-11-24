@@ -4,7 +4,10 @@
 
 ## 安装及使用
 
-在 VS Code 扩展菜单选择 Install from VSIX，安装随附的 VSIX 文件。
+在 VS Code 扩展商店搜索 `YuanhaoLiu.dashboard-simple-code-time-tracker` 安装，
+或运行 `code --install-extension YuanhaoLiu.dashboard-simple-code-time-tracker`。
+也可以在扩展菜单选择 Install from VSIX，安装本地 VSIX 文件。
+早期本地 VSIX 使用发布者 `farmerjohnlyh`，与正式版属于不同扩展；若已安装旧版，请先备份旧版 globalStorage 目录，再卸载旧版。需要保留历史时，在 VS Code 关闭后将旧版数据复制到正式版对应目录。
 命令面板运行 `Dashboard: Open`，或点击右下角状态栏的 `</> x h x m`。
 状态栏显示本地今天所有项目的累计实际停留时间（与报表“实际用时”一致），按整分钟显示，每 10 秒更新；自动恢复历史记录，跨日重新累计，不随报表所选日期改变。
 正常使用文件编辑器即可自动记录；表格与时间线分别提供每日汇总及活动明细。
@@ -21,7 +24,7 @@
 
 ## 数据及性能
 
-无遥测、无网络请求，不保存代码正文。数据位于 VS Code 的扩展 globalStorage 目录下 `farmerjohnlyh.dashboard-simple-code-time-tracker`。
+无遥测、无网络请求，不保存代码正文。数据位于 VS Code 的扩展 globalStorage 目录下 `YuanhaoLiu.dashboard-simple-code-time-tracker`。
 每 10 秒批量写入，按日期与窗口隔离，临时文件 rename 原子替换。崩溃可能损失最后一个未写入批次。跨日期后内存仅保留最近日期的聚合记录。
 输入事件只计算增量；100,000 次同一文件输入仍聚合成同一会话记录。没有全文扫描及 Git 调用。
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0
+
+- 首个 VS Code Marketplace 正式版本，发布者为 `YuanhaoLiu`。
+- 提供本地文件时间和累计编辑统计、表格与时间线、项目别名及 Jira 任务关联。
+- 右下角状态栏显示今日累计实际停留时间：`</> x h x m`。
+
 ## 0.2.0
 
 - 右下角状态栏显示 `</> x h x m`，点击打开 Dashboard。

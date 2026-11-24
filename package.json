@@ -2,8 +2,8 @@
   "name": "dashboard-simple-code-time-tracker",
   "displayName": "Dashboard - a simple code time tracker",
   "description": "Local file-level code time and cumulative edit tracking with a minimal dashboard and timeline.",
-  "version": "0.2.0",
-  "publisher": "farmerjohnlyh",
+  "version": "1.0.0",
+  "publisher": "YuanhaoLiu",
   "engines": {
     "vscode": "^1.85.0",
     "node": "^22.22.2 || ^24.15.0 || >=26.0.0"

@@ -17,7 +17,8 @@ exports.run = async () => {
  const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
  const checks = [];
  try {
-  const ext = vscode.extensions.getExtension('farmerjohnlyh.dashboard-simple-code-time-tracker');
+  const manifest = require('../package.json');
+  const ext = vscode.extensions.getExtension(`${manifest.publisher}.${manifest.name}`);
   assert(ext, 'Dashboard must be installed or supplied via --extensionDevelopmentPath');
   await ext.activate();
   const uri = vscode.Uri.file(path.join(fixture, 'a.c'));
