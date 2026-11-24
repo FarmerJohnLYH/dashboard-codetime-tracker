@@ -1,74 +1,46 @@
-# Dashboard - a simple code time tracker
+# Dashboard 使用指南
 
-本地、零运行时依赖的 VS Code 文件级时间与累计编辑统计。
+在 VS Code 中自动记录代码文件的停留时间和编辑量，按项目查看每天的工作记录。
 
-## 安装及使用
+## 1. 安装并开始记录
 
-在 VS Code 扩展商店搜索 `YuanhaoLiu.dashboard-simple-code-time-tracker` 安装，
-或运行 `code --install-extension YuanhaoLiu.dashboard-simple-code-time-tracker`。
-也可以在扩展菜单选择 Install from VSIX，安装本地 VSIX 文件。
-早期本地 VSIX 使用发布者 `farmerjohnlyh`，与正式版属于不同扩展；若已安装旧版，请先备份旧版 globalStorage 目录，再卸载旧版。需要保留历史时，在 VS Code 关闭后将旧版数据复制到正式版对应目录。
-命令面板运行 `Dashboard: Open`，或点击右下角状态栏的原生代码图标与 `HH:MM` 时间（小时:分钟，例如 `01:17`；未满一小时显示 `00:03`）。
-状态栏显示本地今天所有项目的累计实际停留时间（与报表“实际用时”一致），按整分钟显示，每 10 秒更新；自动恢复历史记录，跨日重新累计，不随报表所选日期改变。
-正常使用文件编辑器即可自动记录；表格与时间线分别提供每日汇总及活动明细。
+1. 在 VS Code 扩展面板搜索 `YuanhaoLiu.dashboard-simple-code-time-tracker`，或打开 [扩展商店页面](https://marketplace.visualstudio.com/items?itemName=YuanhaoLiu.dashboard-simple-code-time-tracker) 点击安装。
+2. 打开项目中的代码文件，正常阅读和编辑即可自动记录，无需手动开始或停止。
+3. 点击右下角的代码图标与时间，打开 Dashboard。也可以在命令面板运行 `Dashboard: Open`。
 
-- 点击项目名称旁的铅笔修改别名，不影响路径身份与历史。
-- 点击 Jira 任务单元格关联 Task/SubTask，留空取消关联。任务类型由使用者手工确认，不连接内网。
-- 项目以工作区目录完整 URI 为身份；未归属工作区的文件以自身 URI 独立归类。展开行查看完整文件路径。
-- 不同目录中的同名工程独立统计；远程 URI 保留主机信息，但远程使用尚未实测。
-- 项目关联任务对该项目全部历史生效。一个项目暂只支持一个任务，不能按会话拆分任务。
-- 日期按运行插件的本地时区划分，跨午夜拆分；当天同一任务先合并再按 0.5h 四舍五入（15 分钟进到 0.5h）。共享任务的合计只在第一行显示。
-- “实际用时”是窗口前台文件停留时间，包含静止阅读。它不是经过人工确认的工时；请自行核对后填写 Jira。
-- 活跃时间按输入、选择和滚动更新；默认空闲阈值 5 分钟，设置 `dashboard.idleMinutes` 可调整。
-- 新增/删除按 UTF-16 长度累计，包括未保存、写后删除、撤销/重做及可观察的插件修改。不是 Git diff 或人工贡献量。
+状态栏显示今天所有项目累计的实际停留时间，格式为 **小时:分钟**：`00:03` 表示 3 分钟，`01:17` 表示 1 小时 17 分钟。每 10 秒更新，跨日重新累计。
 
-## 数据及性能
+![右下角状态栏：代码图标与今日累计时间 01:17](docs/images/status-bar.png)
 
-无遥测、无网络请求，不保存代码正文。数据位于 VS Code 的扩展 globalStorage 目录下 `YuanhaoLiu.dashboard-simple-code-time-tracker`。
-每 10 秒批量写入，按日期与窗口隔离，临时文件 rename 原子替换。崩溃可能损失最后一个未写入批次。跨日期后内存仅保留最近日期的聚合记录。
-输入事件只计算增量；100,000 次同一文件输入仍聚合成同一会话记录。没有全文扫描及 Git 调用。
+## 2. 查看某一天的统计
 
-## 范围与限制
+在页面上方选择日期，或点击左右箭头切换前一天、后一天。切换报表日期时，右下角状态栏仍显示今天的累计时间。
 
-第一版记录普通文本文件。终端、网页、自定义编辑器、会议和硬件调试不计时；打开 Dashboard 时不将查看报表时间计入代码文件。后台观察到的编辑可能有增删量但时间为零。
-多窗口数据不会相互覆盖；依赖 VS Code 焦点事件防止重复计时，跨设备汇总及严格的跨窗口重叠消除未实现。
-超过 30 秒的计时回调间隔视为休眠或宿主停顿，跳过该间隔。文件移动/重命名以新 URI 单独统计，不迁移历史。
-大型格式化或外部变化可能产生较大增删量；无法准确区分 AI、手工、Git checkout。
-保存失败会显示提示。备份时复制整个扩展 globalStorage 目录。
+点击 **表格**，查看每个项目的实际用时、填报工时和累计增删。点击项目左侧的箭头，展开文件路径和每个文件的明细。
 
-## 开发
+![VS Code 实机表格页面：按项目汇总并展开文件明细](docs/images/dashboard-table.png)
 
-Node.js 22.22.2+（22.x）、24.15.0+（24.x）或 26+；`npm ci`、`npm test`、`npx vsce package --no-dependencies --allow-missing-repository`。
-`test/integration.cjs` 是真实 VS Code 扩展宿主测试入口；测试需可启动的桌面环境。
-使用 UI 模板中的 VS Code 主题变量自动适配亮色、暗色和高对比主题。
+- **实际用时**：代码文件在前台停留的时间，包含静止阅读；切到其他应用、终端或 Dashboard 时停止累计。
+- **活跃时间**：展开文件后可见，表示近期有输入、选择或滚动操作的时间。
+- **累计增删**：累计新增和删除的字符数，包含未保存编辑和撤销操作，并非 Git 差异。
+- **填报工时**：关联 Jira 任务后，将当天同一任务的用时合并，按 0.5 小时四舍五入显示，填写工时时请先核对。多个项目关联同一任务时，合计只在首行显示。
 
-## 0.1.1 更新
+点击 **时间线**，按时间顺序查看工作记录；点击每条记录左侧的箭头，展开文件路径、关联任务和编辑量。
 
-补充边界、持久化、异步生命周期和页面交互测试。修复 Dashboard 激活时继续计时、重复通知重置空闲时间、后台编辑记录膨胀、旧日期响应覆盖新日期、关闭页面后的异步访问、多窗口配置覆盖、保存失败重试及跨日清理的数据丢失风险。
-项目别名与任务配置分别原子保存到 project-fields 目录，旧版 projects.json 自动兼容读取，不删除旧数据。损坏记录会提示，原文件保留。相同项目的相同字段被同时修改时采用最后一次成功写入。
+![VS Code 实机时间线页面：按时间查看工作记录](docs/images/dashboard-timeline.png)
 
-运行 `npm run test:coverage` 可复现测试和后端覆盖率。Webview 脚本使用 JSDOM 进行行为测试；不包含真实浏览器布局、颜色、字体或 CSP 执行验证。
+以上为本机 VS Code 实际截图，页面中的项目、任务和时长为演示数据。
 
-## 0.1.2 本机验收
+## 3. 修改项目名称和关联 Jira
 
-修复暗色主题日期图标，并补齐可复现的浏览器测试与独立宿主测试。
-已在本机 macOS VS Code 1.137.0 完成界面与未保存编辑持久化验证。截图和原始测试输出仅保留本地。
-本轮用户保持锁屏，真实前台计时和失焦停表仍待解锁验证。
+- **改名**：在表格中点击项目名称旁的铅笔，输入名称后按回车。这里只修改显示名称，不会重命名项目文件夹。
+- **关联任务**：点击“Jira 任务”列中的“未分配”或已有任务号，输入如 `DEMO-128` 的任务号，再选择 `Task` 或 `SubTask`。若任务有子任务，请填写具体子任务号。
+- **取消关联**：再次点击任务号，清空输入并确认。
 
-浏览器回归：`npx playwright install chromium` 后执行 `npm run test:browser`。
-也可通过 `CHROMIUM_PATH` 指定已有的 Chrome / Chromium 可执行文件。
+任务关联对该项目全部历史记录生效。插件不会连接 Jira，也不会自动提交工时。
 
-真实宿主回归（在已解锁桌面中运行，并保持测试窗口前台）：
+## 4. 调整空闲时间
 
-```sh
-test_profile=$(mktemp -d /tmp/dashboard-test.XXXXXX)
-DASHBOARD_TEST_UNLOCKED=1 DASHBOARD_TEST_USER_DATA_DIR="$test_profile" code \
-  --user-data-dir "$test_profile" \
-  --extensions-dir "$test_profile/extensions" \
-  --extensionDevelopmentPath="$PWD" \
-  --extensionTestsPath="$PWD/test/integration.cjs" \
-  --disable-workspace-trust --skip-welcome
-cat "$test_profile/integration-result.json"
-```
+打开 VS Code 设置，搜索 `dashboard.idleMinutes`，设置 1–60 分钟，默认 5 分钟。
 
-`DASHBOARD_TEST_UNLOCKED=1` 仅应在确认桌面已解锁时设置；未设置时跳过前台计时验收。结果中的 `complete: true` 表示前台计时与报表停表均已验证；锁屏或失焦时会列出 `skipped`，不能当作完整通过。
+超过这个时间没有输入、选择或滚动操作时，停止累计“活跃时间”；只要代码文件仍在前台，静止阅读仍会计入“实际用时”。
